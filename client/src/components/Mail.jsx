@@ -127,7 +127,7 @@ const Mail = () => {
     // Express Communication Pipeline
     const handleSendMailAPI = async ({ accountId, recipientEmail, tickId }) => {
         try {
-            const response = await fetch('http://localhost:3000/mail/fetch', {
+            const response = await fetch('https://mailengine-ueu6.onrender/mail/fetch', {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
