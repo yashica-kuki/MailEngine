@@ -11,8 +11,14 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "imap-simple": "^5.1.0",
+    "mailparser": "^3.9.9",
     "mysql": "^2.18.1",
     "mysql2": "^3.22.5",
+    "nodemailer": "^8.0.10",
     "sequelize": "^6.37.8"
   }
 }

@@ -3,7 +3,7 @@ const router = express.Router();
 const {pool} = require('../config/db'); // Import the raw MySQL pool
 
 // 1. GOOGLE LOGIN (Raw SQL)
-router.post('/google-login', async (req, res) => {
+router.post('/login', async (req, res) => {
   const { googleId, name, email } = req.body;
 
   try {

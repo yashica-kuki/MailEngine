@@ -1,16 +1,27 @@
-# React + Vite
+# MailEngine 🚀
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A secure, multi-tenant full-stack mass email communicator and helpdesk ticketing application. MailEngine enables businesses (Accounts) to manage client profiles, seamlessly track inbound customer complaints, instantiate isolated support threads, and safely orchestrate high-volume outbound email dispatches.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🛠️ Tech Stack
 
-## React Compiler
+- **Frontend:** React.js / Next.js, Tailwind CSS
+- **Authentication:** Google OAuth 2.0 (Passwordless Identity Management)
+- **Backend:** Node.js (Express.js) / Asynchronous Event Pipeline
+- **Database:** MySQL / PostgreSQL (Relational Architecture)
+- **Database Core:** UUID (v4) Staging, Transactional Integrity Engine
+- **Email Infrastructure:** Third-Party SMTP Relay (SendGrid / Resend) via Webhooks
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 📐 Database Architecture & Multi-Tenancy
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The application relies on an optimized, 4-table relational database schema engineered to enforce strict data isolation between corporate accounts while maintaining zero data redundancy.
+
+### Entity Relationships
+
+- **Accounts:** Holds secure profile structures for platform tenants logging in via Google OAuth.
+- **Recipients:** Manages isolated customer portfolios mapped specifically to a tenant's `account_id`.
+- **Tickets:** Instantiates support lifecycles tracking issue statuses (`Open`/`Resolved`).
+- **Mail:** Logs granular communication histories, categorizing payloads via `sender_type` (`customer` or `agent`) to handle single-thread interactions natively.
