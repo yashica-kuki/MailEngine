@@ -3,6 +3,7 @@ import { useGoogleLogin } from '@react-oauth/google';
 
 const Login = () => {
     const navigate = useNavigate();
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
     // Helper function to commit session tracking tokens to state memory
     const saveSessionData = (realUuidFromBackend, userEmail) => {
@@ -28,7 +29,7 @@ const Login = () => {
                 const googleUser = await googleUserRes.json();
 
                 // B. Forward credentials to your backend database router engine
-                const response = await fetch('http://localhost:3000/auth/login', {
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -63,7 +64,7 @@ const Login = () => {
 
         try {
             // Pointing to your credential processing backend endpoint
-            const response = await fetch('http://localhost:3000/auth/login', {
+            const response = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

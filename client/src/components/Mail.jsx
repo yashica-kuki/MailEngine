@@ -6,6 +6,7 @@ const Mail = () => {
     const [subject, setSubject] = useState('');
     const [result, setResult] = useState('');
     const [recipients, setRecipients] = useState([]); // Stores parsed objects: [{ name, email }]
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
     // AI Generation Handler using Gemini
     const generateContent = async (e) => {
@@ -127,7 +128,7 @@ const Mail = () => {
     // Express Communication Pipeline
     const handleSendMailAPI = async ({ accountId, recipientEmail, tickId }) => {
         try {
-            const response = await fetch('http://localhost:3000/mail/fetch', {
+            const response = await fetch(`${API_BASE_URL}/mail/fetch`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

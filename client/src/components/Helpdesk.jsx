@@ -8,6 +8,8 @@ const Helpdesk = () => {
     const [subject, setSubject] = useState('');
     const [result, setResult] = useState('');
     const [loading, setLoading] = useState(true);
+    // Dynamic approach using Vite environment variables
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
     
     // Track next status choice for approval submission (Option 2: Dropdown + Send Button)
     const [nextStatus, setNextStatus] = useState('RESOLVED');
@@ -23,7 +25,8 @@ const Helpdesk = () => {
 
         try {
             console.log(`user fetching from accountId: ${cachedAccountId}`);
-            const response = await fetch(`http://localhost:3000/helpdesk/pending/${cachedAccountId}`);
+            
+            const response = await fetch(`${API_BASE_URL}/helpdesk/pending/${cachedAccountId}`);    
             const data = await response.json();
 
             if (data.success) {
@@ -68,7 +71,7 @@ const Helpdesk = () => {
     // Inline status updates handler (Dropdown feature from Section B)
     const handleStatusUpdate = async (tickId, newStatus) => {
         try {
-            const response = await fetch(`http://localhost:3000/helpdesk/ticket-status/${tickId}`, {
+            const response = await fetch(`${API_BASE_URL}/helpdesk/ticket-status/${tickId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: newStatus })
@@ -137,7 +140,7 @@ const Helpdesk = () => {
             toast.info("Dispatching queue authorization token...");
             const realRecipient = selectedTicket.customer_email || "support-fallback@yourdomain.com";
 
-            const response = await fetch('http://localhost:3000/mail/approve-ticket', {
+            const response = await fetch(`${API_BASE_URL}/mail/approve-ticket`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
