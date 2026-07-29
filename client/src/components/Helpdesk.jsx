@@ -23,7 +23,7 @@ const Helpdesk = () => {
 
         try {
             console.log(`user fetching from accountId: ${cachedAccountId}`);
-            const response = await fetch(`https://mailengine-ueu6.onrender/helpdesk/pending/${cachedAccountId}`);
+            const response = await fetch(`http://localhost:3000/helpdesk/pending/${cachedAccountId}`);
             const data = await response.json();
 
             if (data.success) {
@@ -68,7 +68,7 @@ const Helpdesk = () => {
     // Inline status updates handler (Dropdown feature from Section B)
     const handleStatusUpdate = async (tickId, newStatus) => {
         try {
-            const response = await fetch(`https://mailengine-ueu6.onrender/helpdesk/ticket-status/${tickId}`, {
+            const response = await fetch(`http://localhost:3000/helpdesk/ticket-status/${tickId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: newStatus })
@@ -137,7 +137,7 @@ const Helpdesk = () => {
             toast.info("Dispatching queue authorization token...");
             const realRecipient = selectedTicket.customer_email || "support-fallback@yourdomain.com";
 
-            const response = await fetch('https://mailengine-ueu6.onrender/mail/approve-ticket', {
+            const response = await fetch('http://localhost:3000/mail/approve-ticket', {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
