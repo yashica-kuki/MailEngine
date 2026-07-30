@@ -61,35 +61,35 @@ async function scanAndLogIncomingComplaints() {
 
       if (!isComplaint) continue;
 
-      // STEP A: Sync Recipient data
+      // STEP A: Sync Recipient data (Changed Recipients -> recipients)
       let [recipientRows] = await pool.execute(
-        'SELECT receip_id FROM Recipients WHERE email_add = ? AND acc_id = ?',
+        'SELECT receip_id FROM recipients WHERE email_add = ? AND acc_id = ?',
         [customerEmail, fallbackTenantId]
       );
 
       if (recipientRows.length === 0) {
         await pool.execute(
-          'INSERT INTO Recipients (name, email_add, acc_id) VALUES (?, ?, ?)',
+          'INSERT INTO recipients (name, email_add, acc_id) VALUES (?, ?, ?)',
           [customerName, customerEmail, fallbackTenantId]
         );
       }
 
-      // STEP B: Open a new Ticket explicitly setting modern string Enums
+      // STEP B: Open a new Ticket (Changed Tickets -> tickets)
       await pool.execute(
-        `INSERT INTO Tickets (subject, status, priority, acc_id, sender_email)
+        `INSERT INTO tickets (subject, status, priority, acc_id, sender_email)
          VALUES (?, 'OPEN', 'MEDIUM', ?, ?)`,
         [emailSubject, fallbackTenantId, customerEmail]
       );
 
       const [ticketRows] = await pool.execute(
-        'SELECT tick_id FROM Tickets WHERE acc_id = ? ORDER BY tick_id DESC LIMIT 1',
+        'SELECT tick_id FROM tickets WHERE acc_id = ? ORDER BY tick_id DESC LIMIT 1',
         [fallbackTenantId]
       );
       const activeTicketId = ticketRows[0].tick_id;
 
-      // STEP C: Log the Customer's raw inbound email metadata tracking record
+      // STEP C: Log inbound email (Changed Mail -> mail)
       await pool.execute(
-        `INSERT INTO Mail (
+        `INSERT INTO mail (
           tick_id,
           subject,
           sender_email,
@@ -101,11 +101,11 @@ async function scanAndLogIncomingComplaints() {
         [activeTicketId, emailSubject, customerEmail, process.env.SMTP_USER, emailBody]
       );
 
-      // STEP D: Save the automated placeholder workspace draft
+      // STEP D: Save draft (Changed Mail -> mail)
       const draftAutoReply = `Dear ${customerName},\n\nWe have received your ticket regarding: "${emailSubject}".\n\nYour reference ID is #${activeTicketId.substring(0, 8)}. This issue has been logged and is currently under review by our team.`;
 
       await pool.execute(
-        `INSERT INTO Mail (
+        `INSERT INTO mail (
           tick_id,
           subject,
           sender_email,
@@ -138,7 +138,7 @@ initializeInboxWorker();
 // 🛣️ 2. API ENDPOINTS: HELP DESK SERVICES
 // ==========================================
 
-// PATCH: Update inline ticket status from dashboard dropdown control
+// PATCH: Update inline ticket status
 router.patch('/ticket-status/:tickId', async (req, res) => {
   const { tickId } = req.params;
   const { status } = req.body;
@@ -150,7 +150,8 @@ router.patch('/ticket-status/:tickId', async (req, res) => {
   }
 
   try {
-    await pool.execute('UPDATE Tickets SET status = ? WHERE tick_id = ?', [status, tickId]);
+    // Changed Tickets -> tickets
+    await pool.execute('UPDATE tickets SET status = ? WHERE tick_id = ?', [status, tickId]);
     return res.status(200).json({ success: true, message: `Ticket status updated to ${status}` });
   } catch (error) {
     console.error('[Ticket Status Update Error]:', error.message);
@@ -158,7 +159,7 @@ router.patch('/ticket-status/:tickId', async (req, res) => {
   }
 });
 
-// GET: Fetch Active unresolved items using the clean inverted dynamic Enum exclusion filter
+// GET: Fetch Active unresolved items
 router.get('/pending/:accountId', async (req, res) => {
   const { accountId } = req.params;
 
@@ -167,6 +168,7 @@ router.get('/pending/:accountId', async (req, res) => {
   }
 
   try {
+    // Changed Tickets -> tickets and Mail -> mail
     const [pendingTickets] = await pool.execute(`
       SELECT 
         t.tick_id,
@@ -177,8 +179,8 @@ router.get('/pending/:accountId', async (req, res) => {
         t.created_at,
         m.content AS raw_complaint,
         m.mail_id
-      FROM Tickets t
-      LEFT JOIN Mail m 
+      FROM tickets t
+      LEFT JOIN mail m 
         ON t.tick_id = m.tick_id 
        AND m.email_type = 'incoming-complaint'
       WHERE t.acc_id = ?

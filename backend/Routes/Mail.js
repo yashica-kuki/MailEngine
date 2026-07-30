@@ -38,7 +38,8 @@ router.post('/fetch', async (req, res) => {
   }
 
   try {
-    const [accountRows] = await pool.execute('SELECT name FROM Accounts WHERE id = ?', [accountId]);
+    // FIXED: Changed Accounts -> accounts
+    const [accountRows] = await pool.execute('SELECT name FROM accounts WHERE id = ?', [accountId]);
     const agentName = accountRows[0]?.name || "Support Team";
 
     const messageId = await sendEmailViaSMTP({
@@ -79,28 +80,29 @@ router.post('/approve-ticket', async (req, res) => {
   }
 
   try {
-    // 1. Manage the placeholder draft tracking states
+    // 1. Manage the placeholder draft tracking states (Changed Mail -> mail)
     const [existingDrafts] = await pool.execute(
-      "SELECT * FROM Mail WHERE tick_id = ? AND email_type = 'approved-draft-placeholder'",
+      "SELECT * FROM mail WHERE tick_id = ? AND email_type = 'approved-draft-placeholder'",
       [tickId]
     );
 
     if (existingDrafts.length > 0) {
       await pool.execute(
-        "UPDATE Mail SET content = ? WHERE tick_id = ? AND email_type = 'approved-draft-placeholder'",
+        "UPDATE mail SET content = ? WHERE tick_id = ? AND email_type = 'approved-draft-placeholder'",
         [replyBodyContent, tickId]
       );
     } else {
       await pool.execute(
-        "INSERT INTO Mail (tick_id, content, email_type) VALUES (?, ?, 'approved-draft-placeholder')",
+        "INSERT INTO mail (tick_id, content, email_type) VALUES (?, ?, 'approved-draft-placeholder')",
         [tickId, replyBodyContent]
       );
     }
 
-    // 2. Safely shift the ticket's active operational state status enum configuration code
-    await pool.execute("UPDATE Tickets SET status = ? WHERE tick_id = ?", [nextStatus, tickId]);
+    // 2. Safely shift the ticket's active operational state (Changed Tickets -> tickets)
+    await pool.execute("UPDATE tickets SET status = ? WHERE tick_id = ?", [nextStatus, tickId]);
 
-    const [accountRows] = await pool.execute('SELECT name FROM Accounts WHERE id = ?', [accountId]);
+    // FIXED: Changed Accounts -> accounts
+    const [accountRows] = await pool.execute('SELECT name FROM accounts WHERE id = ?', [accountId]);
     const agentName = accountRows[0]?.name || "Helpdesk Support";
 
     // 3. Dispatch out to your customer using Nodemailer
@@ -111,9 +113,9 @@ router.post('/approve-ticket', async (req, res) => {
       text: replyBodyContent
     });
 
-    // ✅ FIXED: Log row record data accurately in history database matrices inside functional scope!
+    // FIXED: Changed Mail -> mail
     await pool.execute(
-      `INSERT INTO Mail (
+      `INSERT INTO mail (
           tick_id,
           subject,
           sender_email,
