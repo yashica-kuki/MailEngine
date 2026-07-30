@@ -1,67 +1,48 @@
 const express = require('express');
 const router = express.Router();
-const imap = require('imap-simple');
-const simpleParser = require('mailparser').simpleParser;
+const { Resend } = require('resend');
 const { pool } = require('../config/db');
 require('dotenv').config();
 
-// ==========================================
-// 🛡️ CONFIGURATION: EMAIL SERVICE PARAMETERS
-// ==========================================
-const imapConfig = {
-  imap: {
-    user: process.env.SMTP_USER,
-    password: process.env.SMTP_PASS,
-    host: 'imap.gmail.com',
-    port: 993,
-    tls: true,
-    authMethods: ['PLAIN', 'LOGIN'],
-    tlsOptions: {
-      rejectUnauthorized: false,
-      servername: 'imap.gmail.com',
-      minVersion: 'TLSv1.2'
-    },
-    keepalive: {
-      interval: 10000,
-      idleInterval: 30000,
-      forceNoop: true
-    },
-    authTimeout: 30000
-  }
-};
+// Initialize Resend with your API key
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ==========================================
-// 🚀 1. BACKGROUND ENGINE: INBOX SCRAPER
+// 🚀 1. BACKGROUND ENGINE: INBOX SCRAPER (RESEND API)
 // ==========================================
 async function scanAndLogIncomingComplaints() {
   console.log(`[Helpdesk Daemon] Periodic inbox sync initiated...`);
-  let connection;
+  
   try {
     const fallbackTenantId = '96b0d249-61d6-11f1-adde-e86538d58b3c';
 
-    connection = await imap.connect(imapConfig);
-    await connection.openBox('INBOX');
+    // 📩 Fetch received emails using Resend API (HTTP instead of IMAP)
+    const { data: emailsData, error: fetchError } = await resend.emails.list();
 
-    const searchCriteria = ['UNSEEN'];
-    const fetchOptions = { bodies: ['HEADER', 'TEXT', ''], markSeen: true };
-    const messages = await connection.search(searchCriteria, fetchOptions);
+    if (fetchError) {
+      console.error('[Helpdesk Daemon] Resend fetch error:', fetchError.message);
+      return;
+    }
 
-    for (const item of messages) {
-      const allParts = item.parts;
-      const itemBody = allParts.find(part => part.which === '');
-      const parsedEmail = await simpleParser(itemBody.body);
+    if (!emailsData || !emailsData.data || emailsData.data.length === 0) {
+      console.log('[Helpdesk Daemon] No new emails found.');
+      return;
+    }
 
-      const customerEmail = parsedEmail.from.value[0].address;
-      const customerName = parsedEmail.from.value[0].name || 'Valued Customer';
-      const emailSubject = parsedEmail.subject || 'No Subject';
-      const emailBody = parsedEmail.text || '';
+    for (const item of emailsData.data) {
+      const customerEmail = item.from;
+      const customerName = item.from ? item.from.split('<')[0].trim() : 'Valued Customer';
+      const emailSubject = item.subject || 'No Subject';
+      const emailBody = item.text || item.html || '';
 
       const keywords = ['complaint', 'broken', 'issue', 'help', 'error', 'fault'];
-      const isComplaint = keywords.some(k => emailSubject.toLowerCase().includes(k) || emailBody.toLowerCase().includes(k));
+      const isComplaint = keywords.some(k => 
+        emailSubject.toLowerCase().includes(k) || emailBody.toLowerCase().includes(k)
+      );
 
       if (!isComplaint) continue;
 
-      // STEP A: Sync Recipient data (Changed Recipients -> recipients)
+      // STEP A: Sync Recipient data
       let [recipientRows] = await pool.execute(
         'SELECT receip_id FROM recipients WHERE email_add = ? AND acc_id = ?',
         [customerEmail, fallbackTenantId]
@@ -74,7 +55,7 @@ async function scanAndLogIncomingComplaints() {
         );
       }
 
-      // STEP B: Open a new Ticket (Changed Tickets -> tickets)
+      // STEP B: Open a new Ticket
       await pool.execute(
         `INSERT INTO tickets (subject, status, priority, acc_id, sender_email)
          VALUES (?, 'OPEN', 'MEDIUM', ?, ?)`,
@@ -87,7 +68,7 @@ async function scanAndLogIncomingComplaints() {
       );
       const activeTicketId = ticketRows[0].tick_id;
 
-      // STEP C: Log inbound email (Changed Mail -> mail)
+      // STEP C: Log inbound email
       await pool.execute(
         `INSERT INTO mail (
           tick_id,
@@ -98,11 +79,11 @@ async function scanAndLogIncomingComplaints() {
           email_type,
           direction
         ) VALUES (?, ?, ?, ?, ?, 'incoming-complaint', 'INCOMING')`,
-        [activeTicketId, emailSubject, customerEmail, process.env.SMTP_USER, emailBody]
+        [activeTicketId, emailSubject, customerEmail, process.env.SENDER_EMAIL || 'support@yourdomain.com', emailBody]
       );
 
-      // STEP D: Save draft (Changed Mail -> mail)
-      const draftAutoReply = `Dear ${customerName},\n\nWe have received your ticket regarding: "${emailSubject}".\n\nYour reference ID is #${activeTicketId.substring(0, 8)}. This issue has been logged and is currently under review by our team.`;
+      // STEP D: Save draft response
+      const draftAutoReply = `Dear ${customerName},\n\nWe have received your ticket regarding: "${emailSubject}".\n\nYour reference ID is #${String(activeTicketId).substring(0, 8)}. This issue has been logged and is currently under review by our team.`;
 
       await pool.execute(
         `INSERT INTO mail (
@@ -114,15 +95,13 @@ async function scanAndLogIncomingComplaints() {
           email_type,
           direction
         ) VALUES (?, ?, ?, ?, ?, 'approved-draft-placeholder', 'OUTGOING')`,
-        [activeTicketId, `Re: ${emailSubject}`, process.env.SMTP_USER, customerEmail, draftAutoReply]
+        [activeTicketId, `Re: ${emailSubject}`, process.env.SENDER_EMAIL || 'support@yourdomain.com', customerEmail, draftAutoReply]
       );
 
-      console.log(`[Helpdesk Daemon] Success! Ticket created for ${customerEmail} (ID: #${activeTicketId.substring(0, 8)})`);
+      console.log(`[Helpdesk Daemon] Success! Ticket created for ${customerEmail} (ID: #${String(activeTicketId).substring(0, 8)})`);
     }
   } catch (err) {
     console.error('[Helpdesk Daemon Critical Error]:', err.message);
-  } finally {
-    if (connection) connection.end();
   }
 }
 
@@ -150,7 +129,6 @@ router.patch('/ticket-status/:tickId', async (req, res) => {
   }
 
   try {
-    // Changed Tickets -> tickets
     await pool.execute('UPDATE tickets SET status = ? WHERE tick_id = ?', [status, tickId]);
     return res.status(200).json({ success: true, message: `Ticket status updated to ${status}` });
   } catch (error) {
@@ -168,7 +146,6 @@ router.get('/pending/:accountId', async (req, res) => {
   }
 
   try {
-    // Changed Tickets -> tickets and Mail -> mail
     const [pendingTickets] = await pool.execute(`
       SELECT 
         t.tick_id,
