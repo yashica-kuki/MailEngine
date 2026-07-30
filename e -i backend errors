@@ -1,0 +1,22 @@
+[33mb0068c0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m Stop tracking .env file
+[33m59ae397[m switched from SMTP to Resend
+[33m09b591f[m[33m ([m[1;31morigin/main[m[33m)[m db error
+[33m2faa172[m Add vercel routes rewrite for SPA
+[33mb49828f[m Fix gitignore and untrack node_modules/dist
+[33m5e93b9f[m fix: backend errors
+[33m22a3844[m fix: backend deploy errors
+[33ma81d608[m fix: google login issues
+[33m4559d9b[m fix: small changes
+[33mea7a4db[m fix: backend deployment
+[33mae82d34[m deploy backend
+[33mcd5279d[m Update client .gitignore
+[33m5cf22a9[m Fix secrets leak and add gitignore
+[33mdf4a134[m fix: client issues
+[33m434a72f[m fix: add vercel routing configuration
+[33m3343d74[m fix: add vercel routing configuration
+[33mc7217e3[m fiex issues
+[33m37ef006[m fix: resolve README merge conflict
+[33m2bd3926[m chore: configure production build and deployment settings
+[33m6aeb935[m updates Readme.md
+[33m40e9a07[m Revise README for MailEngine platform overview
+[33m53df5d7[m initial commit: mailengine core setup with oauth
