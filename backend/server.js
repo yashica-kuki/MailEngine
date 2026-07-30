@@ -4,6 +4,7 @@ const { connectDB } = require('./config/db');
 const authRoutes = require('./Routes/Signup');
 const mailRoutes = require('./Routes/Mail');
 const helpdeskRoutes = require('./Routes/Helpdesk');
+const analyticsRoutes = require('./Routes/Analytics');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -28,6 +29,7 @@ app.get('/', (req, res) => {
 app.use('/auth', authRoutes);
 app.use('/mail', mailRoutes);
 app.use('/helpdesk', helpdeskRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 app.listen(port, () => {
   console.log(`MailEngine backend listening on port ${port}`);
