@@ -1,6 +1,3 @@
-node_modules/
-.vite/
-*.sql"node_modules" 
 # Dependencies
 /node_modules
 /.pnpm
