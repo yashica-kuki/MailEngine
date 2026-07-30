@@ -1,30 +1,28 @@
 const express = require('express');
-const nodemailer = require("nodemailer");
+const { Resend } = require('resend');
 const { pool } = require('../config/db');
 require('dotenv').config();
 const router = express.Router();
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USER, 
-    pass: process.env.SMTP_PASS, 
-  },
-});
+// Initialize Resend with your environment variable
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 /**
- * 📦 SHARED CORE MAILER SERVICE
+ * 📦 SHARED CORE MAILER SERVICE USING RESEND
  */
-async function sendEmailViaSMTP({ agentName, recipientEmail, subject, text }) {
-  const info = await transporter.sendMail({
-    from: `"${agentName}" <${process.env.SMTP_USER}>`, 
-    to: recipientEmail,
+async function sendEmailViaResend({ agentName, recipientEmail, subject, text }) {
+  const data = await resend.emails.send({
+    from: `${agentName} <onboarding@resend.dev>`,
+    to: [recipientEmail],
     subject: subject,
     text: text,
   });
-  return info.messageId;
+  
+  if (data.error) {
+    throw new Error(data.error.message);
+  }
+  
+  return data.data.id;
 }
 
 // ========================================================
@@ -38,21 +36,20 @@ router.post('/fetch', async (req, res) => {
   }
 
   try {
-    // FIXED: Changed Accounts -> accounts
     const [accountRows] = await pool.execute('SELECT name FROM accounts WHERE id = ?', [accountId]);
     const agentName = accountRows[0]?.name || "Support Team";
 
-    const messageId = await sendEmailViaSMTP({
+    const messageId = await sendEmailViaResend({
       agentName,
       recipientEmail,
       subject: sub,
       text: emailContent
     });
 
-    console.log(`[SMTP Engine] Bulk Campaign item dispatched successfully for Ticket #${tickId}.`);
+    console.log(`[Resend Engine] Bulk Campaign item dispatched successfully for Ticket #${tickId}.`);
     return res.status(200).json({ success: true, messageId });
   } catch (error) {
-    console.error("[SMTP Engine Error]:", error.message);
+    console.error("[Resend Engine Error]:", error.message);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -80,7 +77,7 @@ router.post('/approve-ticket', async (req, res) => {
   }
 
   try {
-    // 1. Manage the placeholder draft tracking states (Changed Mail -> mail)
+    // 1. Manage the placeholder draft tracking states
     const [existingDrafts] = await pool.execute(
       "SELECT * FROM mail WHERE tick_id = ? AND email_type = 'approved-draft-placeholder'",
       [tickId]
@@ -98,22 +95,21 @@ router.post('/approve-ticket', async (req, res) => {
       );
     }
 
-    // 2. Safely shift the ticket's active operational state (Changed Tickets -> tickets)
+    // 2. Safely shift the ticket's active operational state status
     await pool.execute("UPDATE tickets SET status = ? WHERE tick_id = ?", [nextStatus, tickId]);
 
-    // FIXED: Changed Accounts -> accounts
     const [accountRows] = await pool.execute('SELECT name FROM accounts WHERE id = ?', [accountId]);
     const agentName = accountRows[0]?.name || "Helpdesk Support";
 
-    // 3. Dispatch out to your customer using Nodemailer
-    const messageId = await sendEmailViaSMTP({
+    // 3. Dispatch out using Resend
+    const messageId = await sendEmailViaResend({
       agentName,
       recipientEmail,
       subject: `Re: Ticket Resolution Support Notification (#${tickId.substring(0, 8)})`,
       text: replyBodyContent
     });
 
-    // FIXED: Changed Mail -> mail
+    // Log row record data accurately in history database matrices
     await pool.execute(
       `INSERT INTO mail (
           tick_id,
@@ -128,13 +124,13 @@ router.post('/approve-ticket', async (req, res) => {
       [
         tickId,
         `Re: Ticket Resolution Support Notification (#${tickId.substring(0, 8)})`,
-        process.env.SMTP_USER,
+        'onboarding@resend.dev',
         recipientEmail,
         replyBodyContent
       ]
     );
 
-    console.log(`[MailEngine] Email successfully relayed to ${recipientEmail} | MessageID: ${messageId}`);
+    console.log(`[Resend Engine] Email successfully relayed to ${recipientEmail} | MessageID: ${messageId}`);
     return res.status(200).json({ success: true, message: "Ticket processed and email sent successfully!" });
     
   } catch (error) {
