@@ -1,31 +1,34 @@
 const express = require('express');
 const cors = require('cors');
 const { connectDB } = require('./config/db');
-const authRoutes = require('./Routes/Signup'); // Renaming variable to reflect multi-route usage
-const Mail =require('./Routes/Mail');
-const helpdesk=require('./Routes/Helpdesk');
+const authRoutes = require('./Routes/Signup');
+const mailRoutes = require('./Routes/Mail');
+const helpdeskRoutes = require('./Routes/Helpdesk');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(cors({
   origin: '*', 
   credentials: true
 }));
+
 app.use(express.json()); 
 app.use(express.urlencoded({ extended: true }));
 
+// Connect to Database
 connectDB();
-// startEmailWorker();
+
+// Root test route
+app.get('/', (req, res) => {
+  res.status(200).json({ success: true, message: 'MailEngine backend is running.' });
+});
 
 // Routes
-// Using '/auth' as a base path means:
-// -> POST http://localhost:3000/auth/signup
-// -> POST http://localhost:3000/auth/google-login
 app.use('/auth', authRoutes);
-app.use('/mail', Mail);
-app.use('/helpdesk', helpdesk);
+app.use('/mail', mailRoutes);
+app.use('/helpdesk', helpdeskRoutes);
 
-app.listen(port, async () => {
-  console.log(`MailEngine backend listening at http://localhost:${port}`);
+app.listen(port, () => {
+  console.log(`MailEngine backend listening on port ${port}`);
 });
