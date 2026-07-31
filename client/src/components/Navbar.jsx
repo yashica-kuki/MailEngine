@@ -12,7 +12,7 @@ const Navbar = () => {
                 <ul >
                     <li className="text-white flex gap-4 font-2xl">
                         <a className="hover:font-bold" href='/'>Home</a>
-                        <a className="hover:font-bold" href='/about'>Dashboard</a>
+                        <a className="hover:font-bold" href='/analyticsDashboard'>Dashboard</a>
                     </li>
                 </ul>
                 <div className="flex flex-row">
