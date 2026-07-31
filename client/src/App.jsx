@@ -5,6 +5,7 @@ import Mail from "./components/Mail";
 import Helpdesk from "./components/Helpdesk";
 import Login from "./components/Login";
 import Signup from "./components/Signup";
+import AnalyticsDashboard from "./components/Analyticsdashboard";
 
 function App() {
 
@@ -15,6 +16,7 @@ function App() {
           <Routes>
             <Route path='/' element={<Home/>} />
             <Route path='/mail' element={<Mail />} />
+            <Route path='/analyticsDashboard' element={<AnalyticsDashboard />} />
             <Route path='/helpdesk' element={<Helpdesk />} />
             <Route path='/login' element={<Login/>}/>
             <Route path='/signup' element={<Signup/>}/>
