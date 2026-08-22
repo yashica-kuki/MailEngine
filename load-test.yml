@@ -1,0 +1,21 @@
+config:
+  target: "https://mailengine1.onrender.com"
+  phases:
+    - duration: 10
+      arrivalRate: 2
+      rampTo: 5
+      name: "Safe load test within Resend limits"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+scenarios:
+  - name: "Simulate Submit Dispatch"
+    flow:
+      - post:
+          url: "/mail/fetch"
+          json:
+            accountId: "96b0d249-61d6-11f1-adde-e86538d58b3c"
+            recipientEmail: "delivered@resend.dev" # Use Resend's safe test address
+            tickId: "12345"
+            sub: "Automated Load Test Subject"
+            emailContent: "This is a stress test message body from Artillery."

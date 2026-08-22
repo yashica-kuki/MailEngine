@@ -106,9 +106,15 @@ async function scanAndLogIncomingComplaints() {
 }
 
 function initializeInboxWorker() {
+  if (!process.env.RESEND_API_KEY) {
+    console.log('[Helpdesk Daemon] RESEND_API_KEY not configured. Inbox scraper idle.');
+    return;
+  }
   const TWO_MINUTES = 2 * 60 * 1000;
-  scanAndLogIncomingComplaints();
-  setInterval(scanAndLogIncomingComplaints, TWO_MINUTES);
+  scanAndLogIncomingComplaints().catch(err => console.error('[Helpdesk Daemon Error]:', err.message));
+  setInterval(() => {
+    scanAndLogIncomingComplaints().catch(err => console.error('[Helpdesk Daemon Error]:', err.message));
+  }, TWO_MINUTES);
 }
 
 initializeInboxWorker();

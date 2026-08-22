@@ -1,13 +1,10 @@
+import React from 'react';
 import AnalyticsDashboard from './Analyticsdashboard';
 
-function App() {
-  const currentAccountId = "96b0d249-61d6-11f1-adde-e86538d58b3c";
+function Dashboard() {
+  const accountId = localStorage.getItem("accountId") || "96b0d249-61d6-11f1-adde-e86538d58b3c";
 
-  return (
-    <div className="App">
-      <AnalyticsDashboard accountId={currentAccountId} />
-    </div>
-  );
+  return <AnalyticsDashboard accountId={accountId} />;
 }
 
-export default App;
+export default Dashboard;

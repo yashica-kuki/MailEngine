@@ -1,81 +1,209 @@
-import { Link } from 'react-router';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { useGoogleLogin } from '@react-oauth/google';
-import { useNavigate } from 'react-router';
+import { Send, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 
 const Signup = () => {
     const navigate = useNavigate();
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [agreeTerms, setAgreeTerms] = useState(true);
+    const [showPassword, setShowPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [errorMsg, setErrorMsg] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
 
-    const login = useGoogleLogin({
-        onSuccess: codeResponse => { console.log(codeResponse), navigate("/") },
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+
+    const googleLogin = useGoogleLogin({
+        onSuccess: codeResponse => { 
+            console.log("Google Signup success:", codeResponse);
+            navigate("/");
+        },
         flow: 'auth-code',
     });
 
-    return (
-        <>
-            <div className="relative py-3 sm:max-w-xl sm:mx-auto">
-                <div className="relative px-4 py-10 bg-white mx-8 md:mx-0 shadow rounded-3xl sm:p-10">
-                    <div className="w-full max-w-full px-3 mx-auto mt-0 md:flex-0 shrink-0">
-                        <div className="relative z-0 flex flex-col min-w-0 break-words bg-white border-0 shadow-soft-xl rounded-2xl bg-clip-border">
-                            <div className="p-6 mb-0 text-center bg-white border-b-0 rounded-t-2xl">
-                                <h5>Register with</h5>
-                            </div>
+    const handleFormSubmit = async (e) => {
+        e.preventDefault();
+        setErrorMsg('');
+        setSuccessMsg('');
 
-                            {/* Restructured to use a semantic button element directly triggered */}
-                            <div className="justify-center items-center max-w-full px-1 m-auto flex-0">
+        if (!agreeTerms) {
+            setErrorMsg("Please accept the terms to continue.");
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, email, pass: password })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                setSuccessMsg("Account created! Redirecting to login...");
+                setTimeout(() => navigate("/login"), 1200);
+            } else {
+                setErrorMsg(data.message || "Failed to create account.");
+            }
+        } catch (error) {
+            console.error("Signup error:", error);
+            setErrorMsg("Could not connect to registration server.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="py-16 sm:py-20 px-4 flex items-center justify-center">
+            <div className="w-full max-w-md">
+                
+                {/* Header */}
+                <div className="text-center mb-8">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white mx-auto mb-3.5 shadow-xs">
+                        <Send className="w-5 h-5" />
+                    </div>
+                    <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                        Create your account
+                    </h1>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5">
+                        Get started with MailEngine in seconds
+                    </p>
+                </div>
+
+                {/* Form Card */}
+                <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-8 border border-gray-200 dark:border-slate-700/80 shadow-xs space-y-5">
+                    
+                    {errorMsg && (
+                        <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-300 text-sm flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>{errorMsg}</span>
+                        </div>
+                    )}
+
+                    {successMsg && (
+                        <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-600 dark:text-emerald-300 text-sm flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4 shrink-0" />
+                            <span>{successMsg}</span>
+                        </div>
+                    )}
+
+                    <form onSubmit={handleFormSubmit} className="space-y-4">
+                        
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="name">
+                                Full Name
+                            </label>
+                            <input 
+                                type="text" 
+                                id="name" 
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="Alex Morgan"
+                                className="w-full px-3.5 py-2.5 text-sm sm:text-base rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                required 
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="email">
+                                Email Address
+                            </label>
+                            <input 
+                                type="email" 
+                                id="email" 
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="name@company.com"
+                                className="w-full px-3.5 py-2.5 text-sm sm:text-base rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                required 
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="password">
+                                Password
+                            </label>
+                            <div className="relative">
+                                <input 
+                                    type={showPassword ? "text" : "password"} 
+                                    id="password" 
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    placeholder="••••••••"
+                                    className="w-full pl-3.5 pr-10 py-2.5 text-sm sm:text-base rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    required 
+                                />
                                 <button
                                     type="button"
-                                    onClick={() => login()}
-                                    className="inline-flex items-center justify-center w-full px-6 py-3 mb-4 font-bold text-center text-slate-700 uppercase align-middle transition-all bg-transparent border border-slate-300 border-solid rounded-lg shadow-sm cursor-pointer hover:scale-102 leading-pro text-xs ease-soft-in tracking-tight-soft hover:bg-slate-50"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                                 >
-                                    <svg xmlnsXlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 64 64" height="24px" width="24px" className="mr-2">
-                                        <g fillRule="evenodd" fill="none" strokeWidth="1" stroke="none">
-                                            <g fillRule="nonzero" transform="translate(3.000000, 2.000000)">
-                                                <path fill="#4285F4" d="M57.8123233,30.1515267 C57.8123233,27.7263183 57.6155321,25.9565533 57.1896408,24.1212666 L29.4960833,24.1212666 L29.4960833,35.0674653 L45.7515771,35.0674653 C45.4239683,37.7877475 43.6542033,41.8844383 39.7213169,44.6372555 L39.6661883,45.0037254 L48.4223791,51.7870338 L49.0290201,51.8475849 C54.6004021,46.7020943 57.8123233,39.1313952 57.8123233,30.1515267"></path>
-                                                <path fill="#34A853" d="M29.4960833,58.9921667 C37.4599129,58.9921667 44.1456164,56.3701671 49.0290201,51.8475849 L39.7213169,44.6372555 C37.2305867,46.3742596 33.887622,47.5868638 29.4960833,47.5868638 C21.6960582,47.5868638 15.0758763,42.4415991 12.7159637,35.3297782 L12.3700541,35.3591501 L3.26524241,42.4054492 L3.14617358,42.736447 C7.9965904,52.3717589 17.959737,58.9921667 29.4960833,58.9921667"></path>
-                                                <path fill="#FBBC05" d="M12.7159637,35.3297782 C12.0932812,33.4944915 11.7329116,31.5279353 11.7329116,29.4960833 C11.7329116,27.4640054 12.0932812,25.4976752 12.6832029,23.6623884 L12.6667095,23.2715173 L3.44779955,16.1120237 L3.14617358,16.2554937 C1.14708246,20.2539019 0,24.7439491 0,29.4960833 C0,34.2482175 1.14708246,38.7380388 3.14617358,42.736447 L12.7159637,35.3297782"></path>
-                                                <path fill="#EB4335" d="M29.4960833,11.4050769 C35.0347044,11.4050769 38.7707997,13.7975244 40.9011602,15.7968415 L49.2255853,7.66898166 C44.1130815,2.91684746 37.4599129,0 29.4960833,0 C17.959737,0 7.9965904,6.62018183 3.14617358,16.2554937 L12.6832029,23.6623884 C15.0758763,16.5505675 21.6960582,11.4050769 29.4960833,11.4050769"></path>
-                                            </g>
-                                        </g>
-                                    </svg>
-                                    <span>Google</span>
+                                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </button>
                             </div>
-
-                            <div className="relative w-full max-w-full px-3 mt-2 text-center shrink-0">
-                                <p className="z-20 inline px-4 mb-2 font-semibold leading-normal bg-white text-sm text-slate-400">or</p>
-                            </div>
                         </div>
 
-                        <div className="flex-auto p-6">
-                            <form role="form text-left">
-                                <div className="mb-4">
-                                    <input aria-label="Name" placeholder="Name" className="text-sm focus:shadow-soft-primary-outline leading-5.6 ease-soft block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding py-2 px-3 font-normal text-gray-700 transition-all focus:border-fuchsia-300 focus:bg-white focus:text-gray-700 focus:outline-none focus:transition-shadow" type="text" />
-                                </div>
-                                <div className="mb-4">
-                                    <input aria-label="Email" placeholder="Email" className="text-sm focus:shadow-soft-primary-outline leading-5.6 ease-soft block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding py-2 px-3 font-normal text-gray-700 transition-all focus:border-fuchsia-300 focus:bg-white focus:text-gray-700 focus:outline-none focus:transition-shadow" type="email" />
-                                </div>
-                                <div className="mb-4">
-                                    <input aria-label="Password" placeholder="Password" className="text-sm focus:shadow-soft-primary-outline leading-5.6 ease-soft block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding py-2 px-3 font-normal text-gray-700 transition-all focus:border-fuchsia-300 focus:bg-white focus:text-gray-700 focus:outline-none focus:transition-shadow" type="password" />
-                                </div>
-                                <div className="min-h-6 pl-7 mb-0.5 block">
-                                    <input defaultChecked={true} value="" type="checkbox" className="w-5 h-5 ease-soft -ml-7 rounded-1.4 checked:bg-gradient-to-tl checked:from-gray-900 checked:to-slate-800 after:duration-250 after:ease-soft-in-out duration-250 relative float-left mt-1 cursor-pointer appearance-none border border-solid border-slate-200 bg-white bg-contain bg-center bg-no-repeat align-top transition-all after:absolute after:flex after:h-full after:w-full after:items-center after:justify-center after:text-white after:opacity-0 after:transition-all checked:border-0 checked:border-transparent checked:bg-transparent checked:after:opacity-100" id="terms" />
-                                    <label htmlFor="terms" className="mb-2 ml-1 font-normal cursor-pointer select-none text-sm text-slate-700"> I agree the <a className="font-bold text-slate-700">Terms and Conditions</a>
-                                        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 inline ml-1 fill-current text-green-500">
-                                            <path d="M6.293 9.293a1 1 0 0 1 1.414 0L10 10.586l2.293-2.293a1 1 0 1 1 1.414 1.414l-3 3a1 1 0 0 1-1.414 0l-3-3a1 1 0 0 1 0-1.414z"></path>
-                                        </svg>
-                                    </label>
-                                </div>
-
-                                <div className="text-center">
-                                    <button className="inline-block w-full px-6 py-3 mt-6 mb-2 font-bold text-center text-white uppercase align-middle transition-all bg-transparent border-0 rounded-lg cursor-pointer active:opacity-85 hover:scale-102 hover:shadow-soft-xs leading-pro text-xs ease-soft-in tracking-tight-soft shadow-soft-md bg-150 bg-x-25 bg-gradient-to-tl from-gray-900 to-slate-800 hover:border-slate-700 hover:bg-slate-700 hover:text-white" type="button">Sign up</button>
-                                </div>
-                                <p className="mt-4 mb-0 leading-normal text-sm">Already have an account? <Link className="font-bold text-slate-700" to='/login'>Sign in</Link></p>
-                            </form>
+                        <div className="flex items-center gap-2.5 pt-1">
+                            <input 
+                                type="checkbox" 
+                                id="terms" 
+                                checked={agreeTerms}
+                                onChange={(e) => setAgreeTerms(e.target.checked)}
+                                className="w-4 h-4 rounded border-gray-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                            <label htmlFor="terms" className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+                                I agree to the Terms and Conditions
+                            </label>
                         </div>
+
+                        <button 
+                            type="submit" 
+                            disabled={loading}
+                            className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm sm:text-base transition-colors cursor-pointer disabled:opacity-50 mt-2 shadow-xs"
+                        >
+                            {loading ? "Creating account..." : "Sign up"}
+                        </button>
+                    </form>
+
+                    {/* Divider */}
+                    <div className="relative flex items-center justify-center my-4">
+                        <div className="w-full border-t border-gray-200 dark:border-slate-700"></div>
+                        <span className="absolute px-3 bg-white dark:bg-slate-800 text-xs font-medium text-slate-400 uppercase">
+                            or
+                        </span>
                     </div>
+
+                    {/* Google OAuth */}
+                    <button 
+                        type="button" 
+                        onClick={() => googleLogin()} 
+                        className="w-full py-2.5 px-4 rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-sm transition-colors flex items-center justify-center gap-2.5 cursor-pointer shadow-xs"
+                    >
+                        <svg viewBox="0 0 24 24" height="18" width="18" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12,5c1.6167603,0,3.1012573,0.5535278,4.2863159,1.4740601l3.637146-3.4699707 C17.8087769,1.1399536,15.0406494,0,12,0C7.392395,0,3.3966675,2.5999146,1.3858032,6.4098511l4.0444336,3.1929321 C6.4099731,6.9193726,8.977478,5,12,5z" fill="#F44336"></path>
+                            <path d="M23.8960571,13.5018311C23.9585571,13.0101929,24,12.508667,24,12 c0-0.8578491-0.093689-1.6931763-0.2647705-2.5H12v5h6.4862061c-0.5247192,1.3637695-1.4589844,2.5177612-2.6481934,3.319458 l4.0594482,3.204834C22.0493774,19.135437,23.5219727,16.4903564,23.8960571,13.5018311z" fill="#2196F3"></path>
+                            <path d="M5,12c0-0.8434448,0.1568604-1.6483765,0.4302368-2.3972168L1.3858032,6.4098511 C0.5043335,8.0800171,0,9.9801636,0,12c0,1.9972534,0.4950562,3.8763428,1.3582153,5.532959l4.0495605-3.1970215 C5.1484375,13.6044312,5,12.8204346,5,12z" fill="#FFC107"></path>
+                            <path d="M12,19c-3.0455322,0-5.6295776-1.9484863-6.5922241-4.6640625L1.3582153,17.532959 C3.3592529,21.3734741,7.369812,24,12,24c3.027771,0,5.7887573-1.1248169,7.8974609-2.975708l-4.0594482-3.204834 C14.7412109,18.5588989,13.4284058,19,12,19z" fill="#00B060"></path>
+                        </svg>
+                        <span>Continue with Google</span>
+                    </button>
+
+                    <div className="text-center pt-2 text-sm text-slate-500 dark:text-slate-400">
+                        Already have an account?{" "}
+                        <Link className="font-semibold text-blue-600 dark:text-blue-400 hover:underline" to="/login">
+                            Sign in
+                        </Link>
+                    </div>
+
                 </div>
             </div>
-        </>
+        </div>
     );
 };
 
