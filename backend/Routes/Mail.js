@@ -150,6 +150,63 @@ router.post('/fetch', verifyToken, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// ENDPOINT: Bulk Batch Campaign Dispatch
+// ─────────────────────────────────────────────
+router.post('/batch-fetch', verifyToken, async (req, res) => {
+  const { accountId, recipients, sub, emailContent } = req.body;
+  const effectiveAccountId = req.user?.id || accountId;
+
+  if (!Array.isArray(recipients) || recipients.length === 0 || !sub || !emailContent) {
+    return res.status(400).json({
+      success: false,
+      message: 'Recipients list, subject, and emailContent are required.'
+    });
+  }
+
+  try {
+    const senderEmail = process.env.SENDER_EMAIL || 'onboarding@resend.dev';
+
+    // Construct batch array for Resend API
+    const emailBatchPayload = recipients.map(recipient => ({
+      from: `Support Team <${senderEmail}>`,
+      to: [recipient.email],
+      subject: sub,
+      text: emailContent
+    }));
+
+    // 🚀 Send all emails in a single HTTP payload
+    const batchResponse = await resend.batch.send(emailBatchPayload);
+
+    if (batchResponse.error) {
+      throw new Error(batchResponse.error.message);
+    }
+
+    // Non-blocking database sync for recipient records
+    if (effectiveAccountId && isUuid(effectiveAccountId)) {
+      Promise.allSettled(
+        recipients.map(r =>
+          prisma.recipient.upsert({
+            where: { email_add_acc_id: { email_add: r.email, acc_id: effectiveAccountId } },
+            update: {},
+            create: { email_add: r.email, acc_id: effectiveAccountId }
+          })
+        )
+      ).catch(err => console.warn('[Batch DB Sync Warning]:', err.message));
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Batch campaign dispatched to ${recipients.length} recipients.`,
+      data: batchResponse.data
+    });
+
+  } catch (error) {
+    console.error('[Batch Mail Engine Error]:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────
 // ENDPOINT 2: Helpdesk Ticket Approval & Reply
 // ─────────────────────────────────────────────
 router.post('/approve-ticket', verifyToken, async (req, res) => {

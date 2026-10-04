@@ -116,88 +116,44 @@ const Mail = () => {
         }
 
         setDispatching(true);
-        let successes = 0;
-        let lastErrorMessage = "";
-
-        toast.info(`Sending to ${recipients.length} recipients...`);
+        toast.info(`Enqueueing campaign for ${recipients.length} recipients...`);
 
         try {
-            for (const target of recipients) {
-                const res = await handleSendMailAPI({
-                    token: currentToken,
-                    accountId: cachedAccountId,
-                    recipientEmail: target.email,
-                    tickId: cachedTickId
-                });
-
-                if (res.success) {
-                    successes++;
-                } else {
-                    lastErrorMessage = res.message || res.error || "Sending failed";
-                }
-            }
-        } catch (err) {
-            console.error("Campaign loop error:", err);
-            lastErrorMessage = "An unexpected error occurred during dispatch.";
-        } finally {
-            // 🛡️ GUARANTEED TO UNLOCK THE BUTTON UI
-            setDispatching(false);
-        }
-
-        if (successes === recipients.length) {
-            toast.success(`All ${successes} emails dispatched successfully!`);
-        } else if (successes > 0) {
-            toast.warn(`Dispatched ${successes}/${recipients.length} emails. Note: ${lastErrorMessage}`);
-        } else {
-            toast.error(lastErrorMessage || "Sending failed. Please check server connection.");
-        }
-    };
-
-    const handleSendMailAPI = async ({ token: authToken, accountId, recipientEmail, tickId }) => {
-        // ⏱️ 15-second timeout controller so requests never get stuck in (pending)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/mail/fetch`, {
+            // Single API call to post batch list to the backend worker queue
+            const response = await fetch(`${API_BASE_URL}/mail/dispatch-batch`, {
                 method: "POST",
-                headers: { 
-                    "Content-Type": "application/json", 
-                    "Authorization": `Bearer ${authToken}` 
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${currentToken}`
                 },
                 body: JSON.stringify({
-                    accountId,
-                    recipientEmail,
-                    tickId,
+                    accountId: cachedAccountId,
+                    tickId: cachedTickId,
+                    recipients,
                     emailContent: result,
                     sub: subject
-                }),
-                signal: controller.signal
+                })
             });
 
-            clearTimeout(timeoutId);
             const data = await response.json();
 
-            return {
-                success: response.ok && !!data.success,
-                message: data.message,
-                error: data.error
-            };
-        } catch (error) {
-            clearTimeout(timeoutId);
-            console.error("Mail dispatch fetch error:", error);
-            return {
-                success: false,
-                message: error.name === 'AbortError' ? "Request timed out." : (error.message || "Network error.")
-            };
+            if (response.ok && data.success) {
+                toast.success("Campaign queued successfully for background processing!");
+            } else {
+                toast.error(data.message || "Failed to enqueue campaign.");
+            }
+        } catch (err) {
+            console.error("Campaign dispatch error:", err);
+            toast.error("An unexpected error occurred during dispatch.");
+        } finally {
+            setDispatching(false);
         }
     };
 
     return (
         <div className="py-10 sm:py-14 px-4 sm:px-8 lg:px-12 w-full max-w-5xl mx-auto">
-            <ToastContainer position="bottom-right" autoClose={3000} />
+            <ToastContainer autoClose="{3000}" position="bottom-right"/>
 
-            {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                     Email Studio
@@ -207,11 +163,9 @@ const Mail = () => {
                 </p>
             </div>
 
-            {/* Main Form Card */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-10 border border-slate-200 dark:border-slate-800 shadow-sm">
                 <form onSubmit={processFormSubmission} className="space-y-6">
 
-                    {/* Subject Input Row */}
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <label htmlFor="title" className="block text-sm font-bold text-slate-900 dark:text-slate-200">
@@ -226,12 +180,12 @@ const Mail = () => {
                             >
                                 {generating ? (
                                     <>
-                                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                                        <Loader2 className="w-4 h-4 animate-spin text-blue-600"/>
                                         <span>Drafting...</span>
                                     </>
                                 ) : (
                                     <>
-                                        <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                        <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400"/>
                                         <span>Draft with AI</span>
                                     </>
                                 )}
@@ -249,7 +203,6 @@ const Mail = () => {
                         />
                     </div>
 
-                    {/* Content Textarea */}
                     <div>
                         <div className="flex justify-between items-center mb-2">
                             <label htmlFor="content" className="block text-sm font-bold text-slate-900 dark:text-slate-200">
@@ -272,7 +225,6 @@ const Mail = () => {
                         />
                     </div>
 
-                    {/* File Upload & Recipient Stats */}
                     <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-end">
 
@@ -294,12 +246,12 @@ const Mail = () => {
                             <div>
                                 {recipients.length > 0 ? (
                                     <div className="p-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-xs sm:text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2.5 font-medium">
-                                        <Users className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                        <Users className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0"/>
                                         <span><strong>{recipients.length}</strong> recipients ready to dispatch</span>
                                     </div>
                                 ) : (
                                     <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2.5">
-                                        <FileText className="w-5 h-5 text-slate-400 shrink-0" />
+                                        <FileText className="w-5 h-5 text-slate-400 shrink-0"/>
                                         <span>No recipient file uploaded yet</span>
                                     </div>
                                 )}
@@ -308,7 +260,6 @@ const Mail = () => {
                         </div>
                     </div>
 
-                    {/* Submit Action */}
                     <div className="pt-3 flex justify-end">
                         <button
                             type="submit"
@@ -317,12 +268,12 @@ const Mail = () => {
                         >
                             {dispatching ? (
                                 <>
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    <span>Dispatching Campaign...</span>
+                                    <Loader2 className="w-4 h-4 animate-spin"/>
+                                    <span>Enqueueing Campaign...</span>
                                 </>
                             ) : (
                                 <>
-                                    <Send className="w-4 h-4" />
+                                    <Send className="w-4 h-4"/>
                                     <span>Send Campaign</span>
                                 </>
                             )}
