@@ -13,7 +13,8 @@ const Login = () => {
 
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
-    const saveSessionData = (realUuidFromBackend, userEmail) => {
+    const saveSessionData = (token, realUuidFromBackend, userEmail) => {
+        localStorage.setItem("token", token);
         localStorage.setItem("accountId", realUuidFromBackend);
         localStorage.setItem("userEmail", userEmail);
         const generatedTickId = `TICK-${Date.now().toString().slice(-6)}`;
@@ -43,10 +44,10 @@ const Login = () => {
                 const data = await response.json();
 
                 if (data.success && data.user) {
-                    saveSessionData(data.user.id, data.user.email);
+                    saveSessionData(data.token, data.user.id, data.user.email);
                     navigate("/");
                 } else {
-                    setErrorMsg(data.message || "Failed to authenticate.");
+                    setErrorMsg(data.message || 'Invalid email or password.');
                 }
             } catch (err) {
                 console.error("Google auth error:", err);
@@ -73,10 +74,10 @@ const Login = () => {
             const data = await response.json();
 
             if (data.success && data.user) {
-                saveSessionData(data.user.id, data.user.email);
+                saveSessionData(data.token, data.user.id, data.user.email);
                 navigate("/");
             } else {
-                setErrorMsg(data.message || 'Invalid email or password.');
+                setErrorMsg(data.message || "Failed to authenticate.");
             }
         } catch (error) {
             console.error("Login error:", error);
@@ -89,7 +90,7 @@ const Login = () => {
     return (
         <div className="py-16 sm:py-20 px-4 flex items-center justify-center">
             <div className="w-full max-w-md">
-                
+
                 {/* Header */}
                 <div className="text-center mb-8">
                     <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white mx-auto mb-3.5 shadow-xs">
@@ -105,7 +106,7 @@ const Login = () => {
 
                 {/* Form Card */}
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
-                    
+
                     {errorMsg && (
                         <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-sm flex items-center gap-2">
                             <AlertCircle className="w-4 h-4 shrink-0" />
@@ -114,19 +115,19 @@ const Login = () => {
                     )}
 
                     <form onSubmit={handleFormSubmit} className="space-y-4">
-                        
+
                         <div>
                             <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5" htmlFor="email">
                                 Email Address
                             </label>
-                            <input 
-                                type="email" 
-                                id="email" 
+                            <input
+                                type="email"
+                                id="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="name@company.com"
                                 className="w-full px-3.5 py-2.5 text-sm sm:text-base rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                required 
+                                required
                             />
                         </div>
 
@@ -137,14 +138,14 @@ const Login = () => {
                                 </label>
                             </div>
                             <div className="relative">
-                                <input 
-                                    type={showPassword ? "text" : "password"} 
-                                    id="password" 
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    id="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder="••••••••"
                                     className="w-full pl-3.5 pr-10 py-2.5 text-sm sm:text-base rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    required 
+                                    required
                                 />
                                 <button
                                     type="button"
@@ -154,10 +155,15 @@ const Login = () => {
                                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </button>
                             </div>
+                            <div className="flex justify-end items-center mt-1">
+                                <Link to="/forgot-password" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                                    Forgot password?
+                                </Link>
+                            </div>
                         </div>
 
-                        <button 
-                            type="submit" 
+                        <button
+                            type="submit"
                             disabled={loading}
                             className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm sm:text-base transition-colors cursor-pointer disabled:opacity-50 mt-2 shadow-xs"
                         >
@@ -174,9 +180,9 @@ const Login = () => {
                     </div>
 
                     {/* Google OAuth */}
-                    <button 
-                        type="button" 
-                        onClick={() => googleLogin()} 
+                    <button
+                        type="button"
+                        onClick={() => googleLogin()}
                         className="w-full py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-sm transition-colors flex items-center justify-center gap-2.5 cursor-pointer shadow-xs"
                     >
                         <svg viewBox="0 0 24 24" height="18" width="18" xmlns="http://www.w3.org/2000/svg">

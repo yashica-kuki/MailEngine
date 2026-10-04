@@ -1,22 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const { Resend } = require('resend');
-const { pool } = require('../config/db');
+const { prisma } = require('../config/db');
+const { verifyToken } = require('../middleware/auth');
 require('dotenv').config();
 
-// Initialize Resend with your API key
+// Initialize Resend
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ==========================================
-// 🚀 1. BACKGROUND ENGINE: INBOX SCRAPER (RESEND API)
-// ==========================================
-async function scanAndLogIncomingComplaints() {
-  console.log(`[Helpdesk Daemon] Periodic inbox sync initiated...`);
-  
-  try {
-    const fallbackTenantId = '96b0d249-61d6-11f1-adde-e86538d58b3c';
+const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-    // 📩 Fetch received emails using Resend API (HTTP instead of IMAP)
+// ─────────────────────────────────────────────
+// 1. BACKGROUND ENGINE: Inbox Scraper (Resend API)
+// ─────────────────────────────────────────────
+async function scanAndLogIncomingComplaints() {
+  console.log('[Helpdesk Daemon] Periodic inbox sync initiated...');
+
+  try {
+    const fallbackAccount = await prisma.account.findFirst({ select: { id: true } });
+    if (!fallbackAccount) {
+      console.log('[Helpdesk Daemon] No tenant account found in database. Awaiting account registration.');
+      return;
+    }
+    const fallbackTenantId = fallbackAccount.id;
+
+    // Fetch received emails via Resend API
     const { data: emailsData, error: fetchError } = await resend.emails.list();
 
     if (fetchError) {
@@ -36,70 +44,67 @@ async function scanAndLogIncomingComplaints() {
       const emailBody = item.text || item.html || '';
 
       const keywords = ['complaint', 'broken', 'issue', 'help', 'error', 'fault'];
-      const isComplaint = keywords.some(k => 
+      const isComplaint = keywords.some(k =>
         emailSubject.toLowerCase().includes(k) || emailBody.toLowerCase().includes(k)
       );
 
       if (!isComplaint) continue;
 
-      // STEP A: Sync Recipient data
-      let [recipientRows] = await pool.execute(
-        'SELECT receip_id FROM recipients WHERE email_add = ? AND acc_id = ?',
-        [customerEmail, fallbackTenantId]
-      );
+      // STEP A: Sync recipient record
+      const existingRecipient = await prisma.recipient.findFirst({
+        where: { email_add: customerEmail, acc_id: fallbackTenantId }
+      });
 
-      if (recipientRows.length === 0) {
-        await pool.execute(
-          'INSERT INTO recipients (name, email_add, acc_id) VALUES (?, ?, ?)',
-          [customerName, customerEmail, fallbackTenantId]
-        );
+      if (!existingRecipient) {
+        await prisma.recipient.create({
+          data: { name: customerName, email_add: customerEmail, acc_id: fallbackTenantId }
+        });
       }
 
-      // STEP B: Open a new Ticket
-      await pool.execute(
-        `INSERT INTO tickets (subject, status, priority, acc_id, sender_email)
-         VALUES (?, 'OPEN', 'MEDIUM', ?, ?)`,
-        [emailSubject, fallbackTenantId, customerEmail]
-      );
+      // STEP B: Open a new ticket
+      const newTicket = await prisma.ticket.create({
+        data: {
+          subject: emailSubject,
+          status: 'OPEN',
+          priority: 'MEDIUM',
+          acc_id: fallbackTenantId,
+          sender_email: customerEmail
+        }
+      });
 
-      const [ticketRows] = await pool.execute(
-        'SELECT tick_id FROM tickets WHERE acc_id = ? ORDER BY tick_id DESC LIMIT 1',
-        [fallbackTenantId]
-      );
-      const activeTicketId = ticketRows[0].tick_id;
+      const activeTicketId = newTicket.tick_id;
 
-      // STEP C: Log inbound email
-      await pool.execute(
-        `INSERT INTO mail (
-          tick_id,
-          subject,
-          sender_email,
-          recipient_email,
-          content,
-          email_type,
-          direction
-        ) VALUES (?, ?, ?, ?, ?, 'incoming-complaint', 'INCOMING')`,
-        [activeTicketId, emailSubject, customerEmail, process.env.SENDER_EMAIL || 'support@yourdomain.com', emailBody]
-      );
+      // STEP C: Log inbound email record
+      await prisma.mail.create({
+        data: {
+          tick_id: activeTicketId,
+          subject: emailSubject,
+          sender_email: customerEmail,
+          recipient_email: process.env.SENDER_EMAIL || 'support@yourdomain.com',
+          content: emailBody,
+          email_type: 'incoming-complaint',
+          direction: 'INCOMING'
+        }
+      });
 
-      // STEP D: Save draft response
+      // STEP D: Save auto-generated draft response
       const draftAutoReply = `Dear ${customerName},\n\nWe have received your ticket regarding: "${emailSubject}".\n\nYour reference ID is #${String(activeTicketId).substring(0, 8)}. This issue has been logged and is currently under review by our team.`;
 
-      await pool.execute(
-        `INSERT INTO mail (
-          tick_id,
-          subject,
-          sender_email,
-          recipient_email,
-          content,
-          email_type,
-          direction
-        ) VALUES (?, ?, ?, ?, ?, 'approved-draft-placeholder', 'OUTGOING')`,
-        [activeTicketId, `Re: ${emailSubject}`, process.env.SENDER_EMAIL || 'support@yourdomain.com', customerEmail, draftAutoReply]
-      );
+      await prisma.mail.create({
+        data: {
+          tick_id: activeTicketId,
+          subject: `Re: ${emailSubject}`,
+          sender_email: process.env.SENDER_EMAIL || 'support@yourdomain.com',
+          recipient_email: customerEmail,
+          content: draftAutoReply,
+          email_type: 'approved-draft-placeholder',
+          direction: 'OUTGOING'
+        }
+      });
 
-      console.log(`[Helpdesk Daemon] Success! Ticket created for ${customerEmail} (ID: #${String(activeTicketId).substring(0, 8)})`);
+      console.log(`[Helpdesk Daemon] Ticket created for ${customerEmail} (ID: #${String(activeTicketId).substring(0, 8)})`);
     }
+
   } catch (err) {
     console.error('[Helpdesk Daemon Critical Error]:', err.message);
   }
@@ -119,23 +124,29 @@ function initializeInboxWorker() {
 
 initializeInboxWorker();
 
-// ==========================================
-// 🛣️ 2. API ENDPOINTS: HELP DESK SERVICES
-// ==========================================
+// ─────────────────────────────────────────────
+// 2. API ENDPOINTS: Helpdesk Services
+// ─────────────────────────────────────────────
 
-// PATCH: Update inline ticket status
-router.patch('/ticket-status/:tickId', async (req, res) => {
+// PATCH: Update ticket status inline
+router.patch('/ticket-status/:tickId', verifyToken, async (req, res) => {
   const { tickId } = req.params;
   const { status } = req.body;
 
-  const allowedStatuses = ['OPEN', 'IN_PROGRESS', 'PENDING_CUSTOMER', 'RESOLVED', 'CLOSED'];
+  if (!isUuid(tickId)) {
+    return res.status(400).json({ success: false, message: 'Invalid ticket ID format.' });
+  }
 
+  const allowedStatuses = ['OPEN', 'IN_PROGRESS', 'PENDING_CUSTOMER', 'RESOLVED', 'CLOSED'];
   if (!allowedStatuses.includes(status)) {
     return res.status(400).json({ success: false, message: 'Invalid ticket status.' });
   }
 
   try {
-    await pool.execute('UPDATE tickets SET status = ? WHERE tick_id = ?', [status, tickId]);
+    await prisma.ticket.update({
+      where: { tick_id: tickId },
+      data: { status }
+    });
     return res.status(200).json({ success: true, message: `Ticket status updated to ${status}` });
   } catch (error) {
     console.error('[Ticket Status Update Error]:', error.message);
@@ -143,41 +154,52 @@ router.patch('/ticket-status/:tickId', async (req, res) => {
   }
 });
 
-// GET: Fetch Active unresolved items
-router.get('/pending/:accountId', async (req, res) => {
+// GET: Fetch active unresolved tickets with first incoming-complaint mail body
+router.get('/pending/:accountId', verifyToken, async (req, res) => {
   const { accountId } = req.params;
+  const targetAccountId = req.user?.id || accountId;
 
-  if (!accountId) {
-    return res.status(400).json({ success: false, message: "Account ID is a required parameter." });
+  if (!targetAccountId || !isUuid(targetAccountId)) {
+    return res.status(200).json({ success: true, count: 0, tickets: [] });
   }
 
   try {
-    const [pendingTickets] = await pool.execute(`
-      SELECT 
-        t.tick_id,
-        t.subject,
-        t.status,
-        t.priority,
-        t.sender_email AS customer_email,
-        t.created_at,
-        m.content AS raw_complaint,
-        m.mail_id
-      FROM tickets t
-      LEFT JOIN mail m 
-        ON t.tick_id = m.tick_id 
-       AND m.email_type = 'incoming-complaint'
-      WHERE t.acc_id = ?
-        AND t.status NOT IN ('RESOLVED', 'CLOSED')
-      ORDER BY t.created_at DESC
-    `, [accountId]);
+    // Fetch all non-resolved tickets, including their first incoming-complaint mail
+    const tickets = await prisma.ticket.findMany({
+      where: {
+        acc_id: targetAccountId,
+        status: { notIn: ['RESOLVED', 'CLOSED'] }
+      },
+      orderBy: { created_at: 'desc' },
+      include: {
+        mails: {
+          where: { email_type: 'incoming-complaint' },
+          take: 1,
+          orderBy: { mail_id: 'asc' }
+        }
+      }
+    });
+
+    // Shape into the same flat structure the frontend expects
+    const shaped = tickets.map(t => ({
+      tick_id: t.tick_id,
+      subject: t.subject,
+      status: t.status,
+      priority: t.priority,
+      customer_email: t.sender_email,
+      created_at: t.created_at,
+      raw_complaint: t.mails[0]?.content ?? null,
+      mail_id: t.mails[0]?.mail_id ?? null
+    }));
 
     return res.status(200).json({
       success: true,
-      count: pendingTickets.length,
-      tickets: pendingTickets
+      count: shaped.length,
+      tickets: shaped
     });
+
   } catch (error) {
-    console.error("[Helpdesk Fetch Error]:", error.message);
+    console.error('[Helpdesk Fetch Error]:', error.message);
     return res.status(500).json({ success: false, error: error.message });
   }
 });

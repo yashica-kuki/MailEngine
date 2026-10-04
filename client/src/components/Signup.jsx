@@ -16,12 +16,50 @@ const Signup = () => {
 
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
+    const saveSessionData = (token, realUuidFromBackend, userEmail) => {
+        localStorage.setItem("token", token);
+        localStorage.setItem("accountId", realUuidFromBackend);
+        localStorage.setItem("userEmail", userEmail);
+        const generatedTickId = `TICK-${Date.now().toString().slice(-6)}`;
+        localStorage.setItem("currentTickId", generatedTickId);
+    };
+
     const googleLogin = useGoogleLogin({
-        onSuccess: codeResponse => { 
-            console.log("Google Signup success:", codeResponse);
-            navigate("/");
+        onSuccess: async (tokenResponse) => {
+            setErrorMsg('');
+            setLoading(true);
+            try {
+                const googleUserRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+                });
+                const googleUser = await googleUserRes.json();
+
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        googleId: googleUser.sub,
+                        name: googleUser.name,
+                        email: googleUser.email
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.user) {
+                    saveSessionData(data.token, data.user.id, data.user.email);
+                    navigate("/");
+                } else {
+                    setErrorMsg(data.message || "Failed to authenticate.");
+                }
+            } catch (err) {
+                console.error("Google auth error:", err);
+                setErrorMsg("Network error during Google sign-in.");
+            } finally {
+                setLoading(false);
+            }
         },
-        flow: 'auth-code',
+        onError: () => setErrorMsg("Google sign-in cancelled."),
     });
 
     const handleFormSubmit = async (e) => {
@@ -40,7 +78,11 @@ const Signup = () => {
             const response = await fetch(`${API_BASE_URL}/auth/signup`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name, email, pass: password })
+                body: JSON.stringify({ 
+                    name, 
+                    email, 
+                    pass: password 
+                })
             });
 
             const data = await response.json();

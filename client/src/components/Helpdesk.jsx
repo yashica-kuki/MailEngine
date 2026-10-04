@@ -20,15 +20,20 @@ const Helpdesk = () => {
     const [sending, setSending] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [nextStatus, setNextStatus] = useState('RESOLVED');
-
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
     const fetchPendingTickets = async () => {
-        const cachedAccountId = localStorage.getItem("accountId") || "96b0d249-61d6-11f1-adde-e86538d58b3c";
+        const cachedAccountId = localStorage.getItem("accountId") || "";
+        const currentToken = localStorage.getItem("token");
         setLoading(true);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/helpdesk/pending/${cachedAccountId}`);    
+            const response = await fetch(`${API_BASE_URL}/helpdesk/pending/${cachedAccountId || 'all'}`, {
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(currentToken ? { "Authorization": `Bearer ${currentToken}` } : {})
+                }
+            });    
             const data = await response.json();
 
             if (data.success) {
@@ -72,11 +77,12 @@ const Helpdesk = () => {
         }
     };
 
-    const handleStatusUpdate = async (tickId, newStatus) => {
+    const handleStatusUpdate = async (token, tickId, newStatus) => {
         try {
             const response = await fetch(`${API_BASE_URL}/helpdesk/ticket-status/${tickId}`, {
                 method: "PATCH",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json" , "Authorization": `Bearer ${token}`},
+                
                 body: JSON.stringify({ status: newStatus })
             });
             const data = await response.json();
@@ -147,10 +153,14 @@ const Helpdesk = () => {
 
         try {
             const realRecipient = selectedTicket.customer_email || "support@example.com";
+            const currentToken = localStorage.getItem("token");
 
             const response = await fetch(`${API_BASE_URL}/mail/approve-ticket`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(currentToken ? { "Authorization": `Bearer ${currentToken}` } : {})
+                },
                 body: JSON.stringify({
                     tickId: selectedTicket.tick_id,
                     accountId: cachedAccountId,
@@ -178,7 +188,27 @@ const Helpdesk = () => {
         }
     };
 
-    const filteredTickets = tickets.filter(t => 
+    // Define severity hierarchy weights
+    const priorityWeight = {
+        URGENT: 4,
+        HIGH: 3,
+        MEDIUM: 2,
+        LOW: 1
+    };
+
+    // Sort tickets by priority severity (Highest first), then by creation date (Newest first)
+    const sortedTickets = [...tickets].sort((a, b) => {
+        const weightA = priorityWeight[a.priority?.toUpperCase()] || 2;
+        const weightB = priorityWeight[b.priority?.toUpperCase()] || 2;
+        
+        if (weightA !== weightB) {
+            return weightB - weightA; // Descending order (Urgent/High first)
+        }
+        return new Date(b.created_at) - new Date(a.created_at);
+    });
+
+    // Apply search filter on top of the sorted tickets
+    const filteredTickets = sortedTickets.filter(t => 
         t.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         t.customer_email?.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -300,7 +330,7 @@ const Helpdesk = () => {
                                     <span className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400">Status:</span>
                                     <select 
                                         value={selectedTicket.status} 
-                                        onChange={(e) => handleStatusUpdate(selectedTicket.tick_id, e.target.value)}
+                                        onChange={(e) => handleStatusUpdate(localStorage.getItem("token"), selectedTicket.tick_id, e.target.value)}
                                         className="text-xs sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-200 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         <option value="OPEN">Open</option>

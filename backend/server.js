@@ -7,20 +7,23 @@ const helpdeskRoutes = require('./Routes/Helpdesk');
 const analyticsRoutes = require('./Routes/Analytics');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: '*', 
+  origin: (origin, callback) => {
+    // Dynamically reflect request origin to comply with CORS spec when credentials are used
+    callback(null, true);
+  },
   credentials: true
 }));
 
-app.use(express.json()); 
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Connect to Database
+// Connect to PostgreSQL via Prisma
 connectDB();
 
-// Root test route
+// Root health-check
 app.get('/', (req, res) => {
   res.status(200).json({ success: true, message: 'MailEngine backend is running.' });
 });

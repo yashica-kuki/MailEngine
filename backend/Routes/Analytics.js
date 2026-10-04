@@ -1,47 +1,72 @@
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../config/db');
+const { prisma } = require('../config/db');
 require('dotenv').config();
+const { verifyToken } = require('../middleware/auth');
 
-// ==========================================
-// 📊 GET: Fetch Support & AI Analytics Metrics
-// ==========================================
-router.get('/:accountId', async (req, res) => {
+const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+// ─────────────────────────────────────────────
+// GET: Fetch Support & AI Analytics Metrics
+// ─────────────────────────────────────────────
+router.get('/:accountId', verifyToken, async (req, res) => {
   const { accountId } = req.params;
+  const targetAccountId = req.user?.id || accountId;
 
-  if (!accountId) {
-    return res.status(400).json({ success: false, message: "Account ID is a required parameter." });
+  const defaultCounts = {
+    OPEN: 0,
+    IN_PROGRESS: 0,
+    PENDING_CUSTOMER: 0,
+    RESOLVED: 0,
+    CLOSED: 0
+  };
+
+  if (!targetAccountId || !isUuid(targetAccountId)) {
+    return res.status(200).json({
+      success: true,
+      analytics: {
+        totalTickets: 0,
+        statusBreakdown: defaultCounts,
+        resolutionRate: '0%',
+        aiAssistedCount: 0,
+        totalEmailsProcessed: 0
+      }
+    });
   }
 
   try {
-    // 1. Get total ticket counts and breakdown by status
-    const [statusRows] = await pool.execute(`
-      SELECT 
-        status, 
-        COUNT(*) AS count 
-      FROM tickets 
-      WHERE acc_id = ? 
-      GROUP BY status
-    `, [accountId]);
+    // 1. Ticket count broken down by status
+    const statusGroups = await prisma.ticket.groupBy({
+      by: ['status'],
+      where: { acc_id: targetAccountId },
+      _count: { status: true }
+    });
 
-    // 2. Get total volume of complaints / tickets logged
-    const [totalTicketsRows] = await pool.execute(`
-      SELECT COUNT(*) AS totalTickets 
-      FROM tickets 
-      WHERE acc_id = ?
-    `, [accountId]);
+    // 2. Total ticket count
+    const totalTickets = await prisma.ticket.count({
+      where: { acc_id: targetAccountId }
+    });
 
-    // 3. Get count of AI-generated/assisted responses vs total emails logged
-    const [aiMetricRows] = await pool.execute(`
-      SELECT 
-        SUM(CASE WHEN email_type LIKE '%ai%' OR content LIKE '%AI%' THEN 1 ELSE 0 END) AS aiAssistedCount,
-        COUNT(*) AS totalEmails
-      FROM mail m
-      JOIN tickets t ON m.tick_id = t.tick_id
-      WHERE t.acc_id = ?
-    `, [accountId]);
+    // 3. Total emails logged for this account's tickets
+    const totalEmailsProcessed = await prisma.mail.count({
+      where: {
+        ticket: { acc_id: targetAccountId }
+      }
+    });
 
-    // Format status breakdown into a clean key-value object
+    // 4. AI-assisted count — mails flagged by email_type containing 'ai'
+    //    or content containing the word 'AI'
+    const aiAssistedCount = await prisma.mail.count({
+      where: {
+        ticket: { acc_id: targetAccountId },
+        OR: [
+          { email_type: { contains: 'ai', mode: 'insensitive' } },
+          { content: { contains: 'AI' } }
+        ]
+      }
+    });
+
+    // Shape status breakdown into fixed key-value object
     const statusCounts = {
       OPEN: 0,
       IN_PROGRESS: 0,
@@ -49,18 +74,16 @@ router.get('/:accountId', async (req, res) => {
       RESOLVED: 0,
       CLOSED: 0
     };
-    
-    statusRows.forEach(row => {
-      statusCounts[row.status] = row.count;
+
+    statusGroups.forEach(group => {
+      statusCounts[group.status] = group._count.status;
     });
 
-    const totalTickets = totalTicketsRows[0].totalTickets || 0;
-    const totalEmails = aiMetricRows[0].totalEmails || 0;
-    const aiAssistedCount = aiMetricRows[0].aiAssistedCount || 0;
-
-    // Calculate resolution rate percentage safely
-    const resolvedCount = (statusCounts['RESOLVED'] || 0) + (statusCounts['CLOSED'] || 0);
-    const resolutionRate = totalTickets > 0 ? Math.round((resolvedCount / totalTickets) * 100) : 0;
+    // Calculate resolution rate
+    const resolvedCount = (statusCounts.RESOLVED || 0) + (statusCounts.CLOSED || 0);
+    const resolutionRate = totalTickets > 0
+      ? Math.round((resolvedCount / totalTickets) * 100)
+      : 0;
 
     return res.status(200).json({
       success: true,
@@ -69,12 +92,12 @@ router.get('/:accountId', async (req, res) => {
         statusBreakdown: statusCounts,
         resolutionRate: `${resolutionRate}%`,
         aiAssistedCount,
-        totalEmailsProcessed: totalEmails
+        totalEmailsProcessed
       }
     });
 
   } catch (error) {
-    console.error("[Analytics Fetch Error]:", error.message);
+    console.error('[Analytics Fetch Error]:', error.message);
     return res.status(500).json({ success: false, error: error.message });
   }
 });

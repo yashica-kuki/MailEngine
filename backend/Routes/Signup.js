@@ -1,76 +1,93 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const { pool } = require('../config/db');
+const { prisma } = require('../config/db');
+const jwt = require('jsonwebtoken');
 
-// 1. LOGIN ROUTE
+const JWT_SECRET = process.env.JWT_SECRET || 'mailengine-jwt-fallback-secret-2026';
+
+// ─────────────────────────────────────────────
+// 1. LOGIN ROUTE (Public)
+// ─────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   const { googleId, name, email, pass, password } = req.body;
   const userPassword = pass || password;
 
   try {
-    // A. GOOGLE LOGIN FLOW
+    // ── A. GOOGLE LOGIN FLOW ──────────────────
     if (googleId) {
       if (!email) {
         return res.status(400).json({ success: false, message: 'Email is required for Google login.' });
       }
 
-      const [rows] = await pool.execute('SELECT * FROM accounts WHERE google_id = ?', [googleId]);
-      let account = rows[0];
+      let account = await prisma.account.findFirst({ where: { google_id: googleId } });
 
       if (!account) {
-        const [emailRows] = await pool.execute('SELECT * FROM accounts WHERE email = ?', [email]);
-        account = emailRows[0];
+        account = await prisma.account.findUnique({ where: { email } });
 
         if (account) {
-          await pool.execute('UPDATE accounts SET google_id = ? WHERE email = ?', [googleId, email]);
-          account.google_id = googleId;
+          account = await prisma.account.update({
+            where: { email },
+            data: { google_id: googleId }
+          });
         } else {
-          await pool.execute(
-            'INSERT INTO accounts (name, email, google_id, pass) VALUES (?, ?, ?, NULL)',
-            [name || 'Google User', email, googleId]
-          );
-          const [newRows] = await pool.execute('SELECT * FROM accounts WHERE email = ?', [email]);
-          account = newRows[0];
+          account = await prisma.account.create({
+            data: { name: name || 'Google User', email, google_id: googleId, pass: null }
+          });
         }
       }
 
-      // Remove password hash from response before sending
-      delete account.pass;
-      return res.status(200).json({ success: true, user: account });
+      // Generate JWT Token for Google Login
+      const token = jwt.sign({ id: account.id, email: account.email }, JWT_SECRET, { expiresIn: '7d' });
+      const { pass: _pass, ...safeAccount } = account;
+      return res.status(200).json({ success: true, token, user: safeAccount });
     }
 
-    // B. TRADITIONAL EMAIL/PASSWORD LOGIN FLOW
+    // ── B. TRADITIONAL EMAIL / PASSWORD FLOW ─
     if (!email || !userPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Missing credentials. Provide email and password.' 
-      });
+      return res.status(400).json({ success: false, message: 'Missing credentials. Provide email and password.' });
     }
 
-    const [rows] = await pool.execute('SELECT * FROM accounts WHERE email = ?', [email]);
-    const account = rows[0];
-
+    const account = await prisma.account.findUnique({ where: { email } });
     if (!account || !account.pass) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
-    // Password Check
     const isMatch = await bcrypt.compare(userPassword, account.pass);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
-    delete account.pass;
-    return res.status(200).json({ success: true, user: account });
+    console.log("Account ID:", account.id);
+    console.log("JWT_SECRET value:", JWT_SECRET);
+
+    // ✅ FIX: Generate JWT Token for Email/Password Login!
+    const token = jwt.sign(
+      { id: account.id, email: account.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    console.log("Generated Token Successfully:", token);
+
+    const { pass: _pass, ...safeAccount } = account;
+
+    // Return token directly in the JSON response payload
+    return res.status(200).json({
+      success: true,
+      token,
+      user: safeAccount
+    });
 
   } catch (error) {
-    console.error("Login Error:", error);
+    console.error('Login Error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error.' });
   }
 });
 
-// 2. SIGNUP ROUTE
+// ─────────────────────────────────────────────
+// 2. SIGNUP ROUTE (Public)
+// ─────────────────────────────────────────────
 router.post('/signup', async (req, res) => {
   const { name, email, pass, password } = req.body;
   const userPassword = pass || password;
@@ -80,23 +97,19 @@ router.post('/signup', async (req, res) => {
   }
 
   try {
-    const [existing] = await pool.execute('SELECT * FROM accounts WHERE email = ?', [email]);
-    if (existing.length > 0) {
+    const existing = await prisma.account.findUnique({ where: { email } });
+    if (existing) {
       return res.status(400).json({ success: false, message: 'An account with this email already exists.' });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(userPassword, 10);
-
-    await pool.execute(
-      'INSERT INTO accounts (name, email, pass) VALUES (?, ?, ?)',
-      [name, email, hashedPassword]
-    );
+    await prisma.account.create({ data: { name, email, pass: hashedPassword } });
 
     return res.status(201).json({ success: true, message: `Account created for ${name}!` });
+
   } catch (error) {
-    console.error("Signup Error:", error);
-    if (error.code === 'ER_DUP_ENTRY') {
+    console.error('Signup Error:', error);
+    if (error.code === 'P2002') {
       return res.status(400).json({ success: false, message: 'Email already registered.' });
     }
     return res.status(500).json({ success: false, message: 'Internal server error.' });

@@ -1,141 +1,239 @@
 const express = require('express');
 const { Resend } = require('resend');
-const { pool } = require('../config/db');
+const nodemailer = require('nodemailer');
+const { prisma } = require('../config/db');
 require('dotenv').config();
 const router = express.Router();
+const { verifyToken } = require('../middleware/auth');
 
-// Initialize Resend with your environment variable
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
-/**
- * 📦 SHARED CORE MAILER SERVICE USING RESEND
- */
-async function sendEmailViaResend({ agentName, recipientEmail, subject, text }) {
-  const data = await resend.emails.send({
-    from: `${agentName} <onboarding@resend.dev>`,
-    to: [recipientEmail],
-    subject: subject,
-    text: text,
+// Initialize optional SMTP transporter
+let smtpTransporter = null;
+if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+  smtpTransporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
   });
-  
-  if (data.error) {
-    throw new Error(data.error.message);
-  }
-  
-  return data.data.id;
 }
 
-// ========================================================
-// 🚀 ENDPOINT 1: FOR BULK EMAIL CAMPAIGN GENERATOR DASHBOARD
-// ========================================================
-router.post('/fetch', async (req, res) => {
-  const { accountId, recipientEmail, tickId, sub, emailContent } = req.body;
+const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-  if (!accountId || !recipientEmail || !tickId || !sub || !emailContent) {
-    return res.status(400).json({ success: false, message: "Missing required tracking parameters." });
+/**
+ * Unified email sender with SMTP fallback and detailed error categorization
+ */
+async function sendEmail({ agentName, recipientEmail, subject, text }) {
+  // Option A: Custom SMTP via Nodemailer
+  if (smtpTransporter) {
+    try {
+      const fromAddr = process.env.SMTP_FROM || `"${agentName}" <${process.env.SMTP_USER}>`;
+      const info = await smtpTransporter.sendMail({
+        from: fromAddr,
+        to: recipientEmail,
+        subject,
+        text,
+      });
+      return { provider: 'smtp', id: info.messageId };
+    } catch (smtpErr) {
+      console.error('[SMTP Send Error]:', smtpErr.message);
+      if (!resend) throw new Error(`SMTP dispatch failed: ${smtpErr.message}`);
+      console.log('[Mailer] Falling back to Resend API...');
+    }
+  }
+
+  // Option B: Resend API
+  if (!resend) {
+    throw new Error('No email transport configured. Please configure RESEND_API_KEY or SMTP credentials in .env.');
+  }
+
+  const senderEmail = process.env.SENDER_EMAIL || 'onboarding@resend.dev';
+  const from = senderEmail.includes('<') ? senderEmail : `${agentName} <${senderEmail}>`;
+
+  const data = await resend.emails.send({
+    from,
+    to: [recipientEmail],
+    subject,
+    text,
+  });
+
+  if (data.error) {
+    const errMsg = data.error.message || 'Resend error';
+    if (errMsg.includes('only send testing emails')) {
+      throw new Error(`Resend Sandbox restriction: You can only send testing emails to your registered account email. To send to '${recipientEmail}', please verify a domain at resend.com/domains or configure SMTP credentials in .env.`);
+    }
+    throw new Error(errMsg);
+  }
+
+  return { provider: 'resend', id: data.data.id };
+}
+
+// ─────────────────────────────────────────────
+// ENDPOINT 1: Email Campaign Dispatch (Bulk / Single)
+// ─────────────────────────────────────────────
+router.post('/fetch', verifyToken, async (req, res) => {
+  const { accountId, recipientEmail, tickId, sub, subject: altSub, emailContent, content: altContent } = req.body;
+  const effectiveSubject = sub || altSub;
+  const effectiveContent = emailContent || altContent;
+  const effectiveAccountId = req.user?.id || accountId;
+
+  if (!recipientEmail || !effectiveSubject || !effectiveContent) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing required parameters: recipientEmail, subject, and emailContent are required.'
+    });
   }
 
   try {
-    const [accountRows] = await pool.execute('SELECT name FROM accounts WHERE id = ?', [accountId]);
-    const agentName = accountRows[0]?.name || "Support Team";
+    let agentName = 'Support Team';
+    if (effectiveAccountId && isUuid(effectiveAccountId)) {
+      const account = await prisma.account.findUnique({
+        where: { id: effectiveAccountId },
+        select: { name: true }
+      });
+      if (account?.name) agentName = account.name;
+    }
 
-    const messageId = await sendEmailViaResend({
+    // Dispatch email
+    const delivery = await sendEmail({
       agentName,
       recipientEmail,
-      subject: sub,
-      text: emailContent
+      subject: effectiveSubject,
+      text: effectiveContent
     });
 
-    console.log(`[Resend Engine] Bulk Campaign item dispatched successfully for Ticket #${tickId}.`);
-    return res.status(200).json({ success: true, messageId });
+    // Sync recipient to PostgreSQL if tenant account is known
+    if (effectiveAccountId && isUuid(effectiveAccountId)) {
+      try {
+        const existingRecipient = await prisma.recipient.findFirst({
+          where: { email_add: recipientEmail, acc_id: effectiveAccountId }
+        });
+        if (!existingRecipient) {
+          await prisma.recipient.create({
+            data: {
+              email_add: recipientEmail,
+              acc_id: effectiveAccountId
+            }
+          });
+        }
+      } catch (dbErr) {
+        console.warn('[Campaign Recipient DB Sync Warning]:', dbErr.message);
+      }
+    }
+
+    console.log(`[Mail Engine] Campaign email dispatched to ${recipientEmail} (${delivery.provider}: ${delivery.id})`);
+    return res.status(200).json({
+      success: true,
+      message: 'Email dispatched successfully',
+      messageId: delivery.id,
+      provider: delivery.provider
+    });
+
   } catch (error) {
-    console.error("[Resend Engine Error]:", error.message);
-    return res.status(500).json({ success: false, error: error.message });
+    console.error('[Mail Engine Error]:', error.message);
+    const isSandboxError = error.message.includes('Resend Sandbox');
+    return res.status(isSandboxError ? 403 : 500).json({
+      success: false,
+      message: error.message,
+      error: error.message
+    });
   }
 });
 
-// ========================================================
-// 🎯 ENDPOINT 2: FOR HELPDESK SYSTEM APPROVAL ACTION DASHBOARD
-// ========================================================
-router.post('/approve-ticket', async (req, res) => {
+// ─────────────────────────────────────────────
+// ENDPOINT 2: Helpdesk Ticket Approval & Reply
+// ─────────────────────────────────────────────
+router.post('/approve-ticket', verifyToken, async (req, res) => {
   const { tickId, accountId, recipientEmail, replyBodyContent, nextStatus } = req.body;
   const allowedStatuses = ['PENDING_CUSTOMER', 'RESOLVED', 'CLOSED', 'IN_PROGRESS'];
+  const effectiveAccountId = req.user?.id || accountId;
 
-  // Validation
-  if (!tickId || !replyBodyContent || !nextStatus || !recipientEmail || !accountId) {
+  if (!tickId || !replyBodyContent || !nextStatus || !recipientEmail) {
     return res.status(400).json({
       success: false,
-      message: "Missing required parameters: tickId, accountId, recipientEmail, replyBodyContent, or nextStatus."
+      message: 'Missing required parameters: tickId, recipientEmail, replyBodyContent, and nextStatus are required.'
     });
   }
 
   if (!allowedStatuses.includes(nextStatus)) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid targeted nextStatus enum code value."
-    });
+    return res.status(400).json({ success: false, message: 'Invalid nextStatus enum value.' });
   }
 
   try {
-    // 1. Manage the placeholder draft tracking states
-    const [existingDrafts] = await pool.execute(
-      "SELECT * FROM mail WHERE tick_id = ? AND email_type = 'approved-draft-placeholder'",
-      [tickId]
-    );
+    // 1. Upsert the approved-draft-placeholder record for this ticket if tickId is valid UUID
+    if (isUuid(tickId)) {
+      const existingDraft = await prisma.mail.findFirst({
+        where: { tick_id: tickId, email_type: 'approved-draft-placeholder' }
+      });
 
-    if (existingDrafts.length > 0) {
-      await pool.execute(
-        "UPDATE mail SET content = ? WHERE tick_id = ? AND email_type = 'approved-draft-placeholder'",
-        [replyBodyContent, tickId]
-      );
-    } else {
-      await pool.execute(
-        "INSERT INTO mail (tick_id, content, email_type) VALUES (?, ?, 'approved-draft-placeholder')",
-        [tickId, replyBodyContent]
-      );
+      if (existingDraft) {
+        await prisma.mail.update({
+          where: { mail_id: existingDraft.mail_id },
+          data: { content: replyBodyContent }
+        });
+      } else {
+        await prisma.mail.create({
+          data: {
+            tick_id: tickId,
+            content: replyBodyContent,
+            email_type: 'approved-draft-placeholder',
+            direction: 'OUTGOING'
+          }
+        });
+      }
+
+      // 2. Update the ticket status
+      await prisma.ticket.update({
+        where: { tick_id: tickId },
+        data: { status: nextStatus }
+      });
     }
 
-    // 2. Safely shift the ticket's active operational state status
-    await pool.execute("UPDATE tickets SET status = ? WHERE tick_id = ?", [nextStatus, tickId]);
+    // 3. Resolve sender agent name
+    let agentName = 'Helpdesk Support';
+    if (effectiveAccountId && isUuid(effectiveAccountId)) {
+      const account = await prisma.account.findUnique({
+        where: { id: effectiveAccountId },
+        select: { name: true }
+      });
+      if (account?.name) agentName = account.name;
+    }
 
-    const [accountRows] = await pool.execute('SELECT name FROM accounts WHERE id = ?', [accountId]);
-    const agentName = accountRows[0]?.name || "Helpdesk Support";
-
-    // 3. Dispatch out using Resend
-    const messageId = await sendEmailViaResend({
+    // 4. Dispatch email
+    const subject = `Re: Ticket Resolution Support Notification (#${tickId.substring(0, 8)})`;
+    const delivery = await sendEmail({
       agentName,
       recipientEmail,
-      subject: `Re: Ticket Resolution Support Notification (#${tickId.substring(0, 8)})`,
+      subject,
       text: replyBodyContent
     });
 
-    // Log row record data accurately in history database matrices
-    await pool.execute(
-      `INSERT INTO mail (
-          tick_id,
+    // 5. Log the outgoing support-reply record if tickId is valid UUID
+    if (isUuid(tickId)) {
+      await prisma.mail.create({
+        data: {
+          tick_id: tickId,
           subject,
-          sender_email,
-          recipient_email,
-          content,
-          email_type,
-          direction,
-          sent_at
-       ) VALUES (?, ?, ?, ?, ?, 'support-reply', 'OUTGOING', NOW())`,
-      [
-        tickId,
-        `Re: Ticket Resolution Support Notification (#${tickId.substring(0, 8)})`,
-        'onboarding@resend.dev',
-        recipientEmail,
-        replyBodyContent
-      ]
-    );
+          sender_email: process.env.SENDER_EMAIL || 'support@mailengine.dev',
+          recipient_email: recipientEmail,
+          content: replyBodyContent,
+          email_type: 'support-reply',
+          direction: 'OUTGOING'
+        }
+      });
+    }
 
-    console.log(`[Resend Engine] Email successfully relayed to ${recipientEmail} | MessageID: ${messageId}`);
-    return res.status(200).json({ success: true, message: "Ticket processed and email sent successfully!" });
-    
+    console.log(`[Helpdesk Engine] Email relayed to ${recipientEmail} | MessageID: ${delivery.id}`);
+    return res.status(200).json({ success: true, message: 'Ticket processed and email sent successfully!' });
+
   } catch (error) {
-    console.error("[Mail Approval Engine Critical Error]:", error.message);
-    return res.status(500).json({ success: false, message: "Mail delivery system exception dropped.", error: error.message });
+    console.error('[Mail Approval Engine Critical Error]:', error.message);
+    return res.status(500).json({ success: false, message: error.message, error: error.message });
   }
 });
 

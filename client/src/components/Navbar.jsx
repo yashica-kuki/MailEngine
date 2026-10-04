@@ -73,17 +73,39 @@ const Navbar = () => {
 
             <div className="h-5 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1" />
 
-            <Link to="/login">
-              <button className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer">
-                Log in
-              </button>
-            </Link>
+            {localStorage.getItem("token") ? (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium hidden lg:inline-block max-w-[150px] truncate">
+                  {localStorage.getItem("userEmail") || "Signed in"}
+                </span>
+                <button
+                  onClick={() => {
+                    localStorage.removeItem("token");
+                    localStorage.removeItem("accountId");
+                    localStorage.removeItem("userEmail");
+                    localStorage.removeItem("currentTickId");
+                    window.location.href = "/login";
+                  }}
+                  className="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-900 transition-colors cursor-pointer"
+                >
+                  Log out
+                </button>
+              </div>
+            ) : (
+              <>
+                <Link to="/login">
+                  <button className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer">
+                    Log in
+                  </button>
+                </Link>
 
-            <Link to="/signup">
-              <button className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 rounded-lg transition-colors cursor-pointer shadow-xs">
-                Sign up
-              </button>
-            </Link>
+                <Link to="/signup">
+                  <button className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 rounded-lg transition-colors cursor-pointer shadow-xs">
+                    Sign up
+                  </button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -126,17 +148,34 @@ const Navbar = () => {
               </Link>
             );
           })}
-          <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex gap-2">
-            <Link to="/login" className="flex-1" onClick={() => setMobileMenuOpen(false)}>
-              <button className="w-full py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-200">
-                Log in
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+            {localStorage.getItem("token") ? (
+              <button
+                onClick={() => {
+                  localStorage.removeItem("token");
+                  localStorage.removeItem("accountId");
+                  localStorage.removeItem("userEmail");
+                  localStorage.removeItem("currentTickId");
+                  window.location.href = "/login";
+                }}
+                className="w-full py-2.5 rounded-lg border border-rose-200 dark:border-rose-900 text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+              >
+                Log out ({localStorage.getItem("userEmail") || "Account"})
               </button>
-            </Link>
-            <Link to="/signup" className="flex-1" onClick={() => setMobileMenuOpen(false)}>
-              <button className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold">
-                Sign up
-              </button>
-            </Link>
+            ) : (
+              <div className="flex gap-2">
+                <Link to="/login" className="flex-1" onClick={() => setMobileMenuOpen(false)}>
+                  <button className="w-full py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-200">
+                    Log in
+                  </button>
+                </Link>
+                <Link to="/signup" className="flex-1" onClick={() => setMobileMenuOpen(false)}>
+                  <button className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold">
+                    Sign up
+                  </button>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       )}

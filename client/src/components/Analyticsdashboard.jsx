@@ -16,8 +16,16 @@ const AnalyticsDashboard = ({ accountId }) => {
 
   useEffect(() => {
     const fetchAnalytics = async () => {
+      const token = localStorage.getItem("token"); // Retrieve JWT token
+
       try {
-        const response = await fetch(`${API_BASE_URL}/api/analytics/${accountId}`);
+        const response = await fetch(`${API_BASE_URL}/api/analytics/${accountId}`, {
+          method: "GET", // Must be GET, not PATCH
+          headers: { 
+            "Content-Type": "application/json", 
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          }
+        });
         const data = await response.json();
 
         if (data.success) {

@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 import { GoogleGenAI } from "@google/genai";
 import { ToastContainer, toast } from 'react-toastify';
-import { 
-  Sparkles, 
-  Send, 
-  Users, 
-  Loader2,
-  FileText
+import {
+    Sparkles,
+    Send,
+    Users,
+    Loader2,
+    FileText
 } from "lucide-react";
 
 const Mail = () => {
@@ -15,7 +15,7 @@ const Mail = () => {
     const [recipients, setRecipients] = useState([]);
     const [generating, setGenerating] = useState(false);
     const [dispatching, setDispatching] = useState(false);
-    
+
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
     const generateContent = async (e) => {
@@ -35,13 +35,13 @@ const Mail = () => {
             const ai = new GoogleGenAI({ apiKey: apikey });
 
             const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash", 
+                model: "gemini-2.5-flash",
                 contents: `Generate an email body for the subject: "${subject}"`,
                 config: {
                     systemInstruction: "You are an email assistant. Output ONLY a clean ready-to-send email body. Do not include introductory notes, multiple choices, or markdown headers. Start with a greeting and finish with a sign-off."
                 },
             });
-            
+
             setResult(response.text);
             toast.success("Draft generated.");
         } catch (error) {
@@ -57,7 +57,7 @@ const Mail = () => {
         if (!file) return;
 
         const reader = new FileReader();
-        
+
         reader.onload = (event) => {
             const fileContent = event.target.result;
             const lines = fileContent.split(/\r?\n/);
@@ -75,7 +75,7 @@ const Mail = () => {
                     }
                 }
             });
-            
+
             if (parsedCustomers.length === 0) {
                 toast.error("Format must be: Name, email@example.com (one per line).");
                 setRecipients([]);
@@ -96,8 +96,14 @@ const Mail = () => {
     const processFormSubmission = async (e) => {
         e.preventDefault();
 
-        const cachedAccountId = localStorage.getItem("accountId") || "96b0d249-61d6-11f1-adde-e86538d58b3c";
-        const cachedTickId = localStorage.getItem("currentTickId") || `TICK-${Date.now().toString().slice(-6)}`;
+        const currentToken = localStorage.getItem("token");
+        const cachedAccountId = localStorage.getItem("accountId") || "";
+        const cachedTickId = localStorage.getItem("currentTickId") || "";
+
+        if (!currentToken) {
+            toast.error("Please log in first to dispatch campaigns.");
+            return;
+        }
 
         if (recipients.length === 0) {
             toast.warn("Please upload a .txt file with recipient records.");
@@ -111,31 +117,43 @@ const Mail = () => {
 
         setDispatching(true);
         let successes = 0;
+        let lastErrorMessage = "";
         toast.info(`Sending to ${recipients.length} recipients...`);
 
         for (const target of recipients) {
-            const deliverySuccess = await handleSendMailAPI({
+            const res = await handleSendMailAPI({
+                token: currentToken,
                 accountId: cachedAccountId,
                 recipientEmail: target.email,
                 tickId: cachedTickId
             });
-            if (deliverySuccess) successes++;
+
+            if (res.success) {
+                successes++;
+            } else {
+                lastErrorMessage = res.message || res.error || "Sending failed";
+            }
         }
 
         setDispatching(false);
 
-        if (successes > 0) {
-            toast.success(`Sent ${successes} emails successfully.`);
+        if (successes === recipients.length) {
+            toast.success(`All ${successes} emails dispatched successfully!`);
+        } else if (successes > 0) {
+            toast.warn(`Dispatched ${successes}/${recipients.length} emails. Note: ${lastErrorMessage}`);
         } else {
-            toast.error("Sending failed. Check server connection.");
+            toast.error(lastErrorMessage || "Sending failed. Please check server connection.");
         }
     };
 
-    const handleSendMailAPI = async ({ accountId, recipientEmail, tickId }) => {
+    const handleSendMailAPI = async ({ token: authToken, accountId, recipientEmail, tickId }) => {
         try {
             const response = await fetch(`${API_BASE_URL}/mail/fetch`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json", 
+                    "Authorization": `Bearer ${authToken}` 
+                },
                 body: JSON.stringify({
                     accountId,
                     recipientEmail,
@@ -144,19 +162,26 @@ const Mail = () => {
                     sub: subject
                 })
             });
-            
+
             const data = await response.json();
-            return data.success;
+            return {
+                success: !!data.success,
+                message: data.message,
+                error: data.error
+            };
         } catch (error) {
             console.error("Mail dispatch error:", error);
-            return false;
+            return {
+                success: false,
+                message: error.message || "Network error. Failed to reach server."
+            };
         }
     };
 
     return (
         <div className="py-10 sm:py-14 px-4 sm:px-8 lg:px-12 w-full max-w-5xl mx-auto">
             <ToastContainer position="bottom-right" autoClose={3000} />
-            
+
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
@@ -170,16 +195,16 @@ const Mail = () => {
             {/* Main Form Card */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-10 border border-slate-200 dark:border-slate-800 shadow-sm">
                 <form onSubmit={processFormSubmission} className="space-y-6">
-                    
+
                     {/* Subject Input Row */}
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <label htmlFor="title" className="block text-sm font-bold text-slate-900 dark:text-slate-200">
                                 Subject Line
                             </label>
-                            
-                            <button 
-                                type="button" 
+
+                            <button
+                                type="button"
                                 onClick={generateContent}
                                 disabled={generating}
                                 className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-50 border border-slate-200 dark:border-slate-700"
@@ -197,15 +222,15 @@ const Mail = () => {
                                 )}
                             </button>
                         </div>
-                        
-                        <input 
-                            value={subject} 
-                            onChange={(e) => setSubject(e.target.value)} 
-                            type="text" 
-                            id="title" 
+
+                        <input
+                            value={subject}
+                            onChange={(e) => setSubject(e.target.value)}
+                            type="text"
+                            id="title"
                             placeholder="e.g. Service Update for Q3"
-                            className="w-full px-4 py-3 text-sm sm:text-base rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500" 
-                            required 
+                            className="w-full px-4 py-3 text-sm sm:text-base rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
                         />
                     </div>
 
@@ -221,13 +246,13 @@ const Mail = () => {
                                 </span>
                             )}
                         </div>
-                        <textarea 
-                            value={result} 
-                            onChange={(e) => setResult(e.target.value)} 
-                            id="content" 
+                        <textarea
+                            value={result}
+                            onChange={(e) => setResult(e.target.value)}
+                            id="content"
                             placeholder="Write your email content or use 'Draft with AI' above..."
-                            className="w-full px-4 py-3 text-sm sm:text-base rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans leading-relaxed" 
-                            rows={8} 
+                            className="w-full px-4 py-3 text-sm sm:text-base rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans leading-relaxed"
+                            rows={8}
                             required
                         />
                     </div>
@@ -235,18 +260,18 @@ const Mail = () => {
                     {/* File Upload & Recipient Stats */}
                     <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-end">
-                            
+
                             <div>
                                 <label className="block text-sm font-bold text-slate-900 dark:text-slate-200 mb-2">
                                     Recipient File (.txt)
                                 </label>
-                                <input 
-                                    type="file" 
-                                    id="textFile" 
-                                    accept=".txt" 
-                                    onChange={handleFileUpload} 
-                                    className="block w-full text-xs sm:text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-3.5 file:rounded-lg file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-slate-100 file:text-slate-800 dark:file:bg-slate-800 dark:file:text-slate-200 hover:file:bg-slate-200 cursor-pointer border border-slate-300 dark:border-slate-700 rounded-xl p-1.5 bg-white dark:bg-slate-950" 
-                                    required 
+                                <input
+                                    type="file"
+                                    id="textFile"
+                                    accept=".txt"
+                                    onChange={handleFileUpload}
+                                    className="block w-full text-xs sm:text-sm text-slate-600 dark:text-slate-400 file:mr-4 file:py-2 file:px-3.5 file:rounded-lg file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-slate-100 file:text-slate-800 dark:file:bg-slate-800 dark:file:text-slate-200 hover:file:bg-slate-200 cursor-pointer border border-slate-300 dark:border-slate-700 rounded-xl p-1.5 bg-white dark:bg-slate-950"
+                                    required
                                 />
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Format: Name, email@domain.com (one per line)</p>
                             </div>
@@ -270,8 +295,8 @@ const Mail = () => {
 
                     {/* Submit Action */}
                     <div className="pt-3 flex justify-end">
-                        <button 
-                            type="submit" 
+                        <button
+                            type="submit"
                             disabled={dispatching}
                             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm sm:text-base transition-colors cursor-pointer disabled:opacity-50 shadow-sm"
                         >

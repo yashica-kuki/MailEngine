@@ -1,0 +1,100 @@
+// MailEngine — Prisma Schema (PostgreSQL)
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  PENDING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum EmailDirection {
+  INCOMING
+  OUTGOING
+}
+
+// ─────────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────────
+
+/// One business tenant / user account
+model Account {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  email     String   @unique
+  pass      String?  // nullable — Google-only accounts have no password
+  google_id String?  @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tickets    Ticket[]
+  recipients Recipient[]
+
+  @@map("accounts")
+}
+
+/// Support ticket opened for a complaint or inquiry
+model Ticket {
+  tick_id      String         @id @default(uuid()) @db.Uuid
+  subject      String
+  status       TicketStatus   @default(OPEN)
+  priority     TicketPriority @default(MEDIUM)
+  sender_email String?
+  created_at   DateTime       @default(now())
+
+  acc_id  String  @db.Uuid
+  account Account @relation(fields: [acc_id], references: [id])
+
+  mails Mail[]
+
+  @@map("tickets")
+}
+
+/// Email message associated with a ticket (inbound or outbound)
+model Mail {
+  mail_id         Int            @id @default(autoincrement())
+  subject         String?
+  sender_email    String?
+  recipient_email String?
+  content         String?        @db.Text
+  email_type      String         // e.g. 'incoming-complaint' | 'approved-draft-placeholder' | 'support-reply'
+  direction       EmailDirection @default(OUTGOING)
+  sent_at         DateTime       @default(now())
+
+  tick_id String @db.Uuid
+  ticket  Ticket @relation(fields: [tick_id], references: [tick_id])
+
+  @@map("mail")
+}
+
+/// Contact/customer stored under a tenant account
+model Recipient {
+  receip_id Int     @id @default(autoincrement())
+  name      String?
+  email_add String
+
+  acc_id  String  @db.Uuid
+  account Account @relation(fields: [acc_id], references: [id])
+
+  @@map("recipients")
+}
