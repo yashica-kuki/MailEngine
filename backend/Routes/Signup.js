@@ -49,8 +49,15 @@ router.post('/login', async (req, res) => {
     }
 
     const account = await prisma.account.findUnique({ where: { email } });
-    if (!account || !account.pass) {
+    if (!account) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+    }
+
+    if (!account.pass) {
+      return res.status(401).json({
+        success: false,
+        message: "This account was registered via Google. Please click 'Continue with Google' to log in."
+      });
     }
 
     const isMatch = await bcrypt.compare(userPassword, account.pass);
@@ -58,17 +65,12 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
-    console.log("Account ID:", account.id);
-    console.log("JWT_SECRET value:", JWT_SECRET);
-
-    // ✅ FIX: Generate JWT Token for Email/Password Login!
+    // Generate JWT Token for Email/Password Login
     const token = jwt.sign(
       { id: account.id, email: account.email },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
-
-    console.log("Generated Token Successfully:", token);
 
     const { pass: _pass, ...safeAccount } = account;
 
@@ -81,7 +83,11 @@ router.post('/login', async (req, res) => {
 
   } catch (error) {
     console.error('Login Error:', error);
-    return res.status(500).json({ success: false, message: 'Internal server error.' });
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error.',
+      error: error.message
+    });
   }
 });
 
@@ -112,7 +118,11 @@ router.post('/signup', async (req, res) => {
     if (error.code === 'P2002') {
       return res.status(400).json({ success: false, message: 'Email already registered.' });
     }
-    return res.status(500).json({ success: false, message: 'Internal server error.' });
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error.',
+      error: error.message
+    });
   }
 });
 

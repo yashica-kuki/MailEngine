@@ -77,7 +77,7 @@ const Login = () => {
                 saveSessionData(data.token, data.user.id, data.user.email);
                 navigate("/");
             } else {
-                setErrorMsg(data.message || "Failed to authenticate.");
+                setErrorMsg(data.error && data.error !== data.message ? `${data.message} (${data.error})` : (data.message || data.error || "Failed to authenticate."));
             }
         } catch (error) {
             console.error("Login error:", error);
