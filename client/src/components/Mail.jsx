@@ -116,11 +116,11 @@ const Mail = () => {
         }
 
         setDispatching(true);
-        toast.info(`Enqueueing campaign for ${recipients.length} recipients...`);
+        toast.info(`Dispatching campaign to ${recipients.length} recipients...`);
 
         try {
-            // Single API call to post batch list to the backend worker queue
-            const response = await fetch(`${API_BASE_URL}/mail/batch-fetch`, {
+            // Single API call to post batch list to the backend
+            const response = await fetch(`${API_BASE_URL}/mail/dispatch-batch`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -138,9 +138,9 @@ const Mail = () => {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                toast.success("Campaign queued successfully for background processing!");
+                toast.success("Campaign dispatched successfully!");
             } else {
-                toast.error(data.message || "Failed to enqueue campaign.");
+                toast.error(data.message || "Failed to dispatch campaign.");
             }
         } catch (err) {
             console.error("Campaign dispatch error:", err);
@@ -152,7 +152,8 @@ const Mail = () => {
 
     return (
         <div className="py-10 sm:py-14 px-4 sm:px-8 lg:px-12 w-full max-w-5xl mx-auto">
-            <ToastContainer autoClose="{3000}" position="bottom-right"/>
+            {/* Set autoClose to 7000 (7 seconds) so notifications stay on screen longer */}
+            <ToastContainer position="bottom-right" autoClose={7000} />
 
             <div className="mb-8">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
@@ -269,7 +270,7 @@ const Mail = () => {
                             {dispatching ? (
                                 <>
                                     <Loader2 className="w-4 h-4 animate-spin"/>
-                                    <span>Enqueueing Campaign...</span>
+                                    <span>Dispatching Campaign...</span>
                                 </>
                             ) : (
                                 <>
