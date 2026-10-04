@@ -136,11 +136,15 @@ router.post('/fetch', verifyToken, async (req, res) => {
 
   } catch (error) {
     console.error('[Mail Engine Error]:', error.message);
-    const isSandboxError = error.message.includes('Resend Sandbox');
-    return res.status(isSandboxError ? 403 : 500).json({
+    const isSandboxError = error.message.includes('Resend Sandbox') || error.message.includes('only send testing emails');
+    // Use 422 for Resend sandbox domain restriction (not 403, which looks like auth failure)
+    return res.status(isSandboxError ? 422 : 500).json({
       success: false,
-      message: error.message,
-      error: error.message
+      message: isSandboxError
+        ? `Email delivery blocked: ${error.message}`
+        : error.message,
+      error: error.message,
+      sandboxError: isSandboxError
     });
   }
 });

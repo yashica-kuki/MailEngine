@@ -100,8 +100,8 @@ const Mail = () => {
         const cachedAccountId = localStorage.getItem("accountId") || "";
         const cachedTickId = localStorage.getItem("currentTickId") || "";
 
-        if (!currentToken) {
-            toast.error("Please log in first to dispatch campaigns.");
+        if (!currentToken || currentToken === "null" || currentToken === "undefined") {
+            toast.error("Please log in again to dispatch campaigns.");
             return;
         }
 
@@ -118,24 +118,31 @@ const Mail = () => {
         setDispatching(true);
         let successes = 0;
         let lastErrorMessage = "";
+
         toast.info(`Sending to ${recipients.length} recipients...`);
 
-        for (const target of recipients) {
-            const res = await handleSendMailAPI({
-                token: currentToken,
-                accountId: cachedAccountId,
-                recipientEmail: target.email,
-                tickId: cachedTickId
-            });
+        try {
+            for (const target of recipients) {
+                const res = await handleSendMailAPI({
+                    token: currentToken,
+                    accountId: cachedAccountId,
+                    recipientEmail: target.email,
+                    tickId: cachedTickId
+                });
 
-            if (res.success) {
-                successes++;
-            } else {
-                lastErrorMessage = res.message || res.error || "Sending failed";
+                if (res.success) {
+                    successes++;
+                } else {
+                    lastErrorMessage = res.message || res.error || "Sending failed";
+                }
             }
+        } catch (err) {
+            console.error("Campaign loop error:", err);
+            lastErrorMessage = "An unexpected error occurred during dispatch.";
+        } finally {
+            // 🛡️ GUARANTEED TO UNLOCK THE BUTTON UI
+            setDispatching(false);
         }
-
-        setDispatching(false);
 
         if (successes === recipients.length) {
             toast.success(`All ${successes} emails dispatched successfully!`);
@@ -147,6 +154,10 @@ const Mail = () => {
     };
 
     const handleSendMailAPI = async ({ token: authToken, accountId, recipientEmail, tickId }) => {
+        // ⏱️ 15-second timeout controller so requests never get stuck in (pending)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
         try {
             const response = await fetch(`${API_BASE_URL}/mail/fetch`, {
                 method: "POST",
@@ -160,20 +171,24 @@ const Mail = () => {
                     tickId,
                     emailContent: result,
                     sub: subject
-                })
+                }),
+                signal: controller.signal
             });
 
+            clearTimeout(timeoutId);
             const data = await response.json();
+
             return {
-                success: !!data.success,
+                success: response.ok && !!data.success,
                 message: data.message,
                 error: data.error
             };
         } catch (error) {
-            console.error("Mail dispatch error:", error);
+            clearTimeout(timeoutId);
+            console.error("Mail dispatch fetch error:", error);
             return {
                 success: false,
-                message: error.message || "Network error. Failed to reach server."
+                message: error.name === 'AbortError' ? "Request timed out." : (error.message || "Network error.")
             };
         }
     };
