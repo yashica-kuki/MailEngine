@@ -120,7 +120,7 @@ const Mail = () => {
 
         try {
             // Single API call to post batch list to the backend worker queue
-            const response = await fetch(`${API_BASE_URL}/mail/dispatch-batch`, {
+            const response = await fetch(`${API_BASE_URL}/mail/batch-fetch`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
