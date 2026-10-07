@@ -5,6 +5,7 @@ const { prisma } = require('../config/db');
 require('dotenv').config();
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
+const { Webhook } = require('svix');
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
@@ -296,6 +297,93 @@ router.post('/approve-ticket', verifyToken, async (req, res) => {
     console.error('[Mail Approval Engine Critical Error]:', error.message);
     return res.status(500).json({ success: false, message: error.message, error: error.message });
   }
+});
+
+// Helper function: Checks if email subject or content indicates a complaint/support inquiry
+function isComplaintEmail(subject = '', content = '') {
+  const textToAnalyze = `${subject} ${content}`.toLowerCase();
+
+  // Primary keywords indicating support complaints, issues, or inquiries
+  const complaintKeywords = [
+    'issue', 'complaint', 'problem', 'error', 'failed', 'failure',
+    'help', 'support', 'bug', 'refund', 'charge', 'billing', 'cancel',
+    'not working', 'broken', 'unable', 'delay', 'urgent', 'dispute',
+    'wrong', 'account', 'login', 'payment', 'service update'
+  ];
+
+  // Common non-complaint / automated keywords to skip
+  const ignoreKeywords = [
+    'unsubscribe', 'newsletter', 'no-reply', 'noreply', 'promotional',
+    'marketing', 'digest', 'weekly updates'
+  ];
+
+  // If email explicitly contains unsubscribe/newsletter markers, ignore it
+  const containsIgnoreKeyword = ignoreKeywords.some((kw) => textToAnalyze.includes(kw));
+  if (containsIgnoreKeyword) return false;
+
+  // Check if at least one complaint keyword exists
+  return complaintKeywords.some((keyword) => textToAnalyze.includes(keyword));
+}
+
+// ─────────────────────────────────────────────
+// ENDPOINT: Inbound Webhook (Filter Complaints Only)
+// ─────────────────────────────────────────────
+router.post('/inbound-webhook', express.json(), async (req, res) => {
+  const body = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString()) : req.body;
+
+  if (body.type === 'email.received' || body.type === 'email.incoming') {
+    const emailData = body.data;
+    const subject = emailData.subject || 'No Subject';
+    const content = emailData.text || emailData.html || 'No Content';
+    const sender = typeof emailData.from === 'string' ? emailData.from : (emailData.from?.email || emailData.from);
+    const recipient = Array.isArray(emailData.to) ? emailData.to[0] : emailData.to;
+
+    // 1. Run Complaint Filter
+    const isComplaint = isComplaintEmail(subject, content);
+
+    if (!isComplaint) {
+      console.log(`ℹ️ [Webhook Ignored]: Email from ${sender} with subject "${subject}" is not a complaint.`);
+      return res.status(200).json({ received: true, status: 'ignored_non_complaint' });
+    }
+
+    // 2. Create Ticket & Mail if it passes the filter
+    try {
+      const account = await prisma.account.findFirst();
+
+      if (!account) {
+        console.error('❌ FAILED: No user account found in PostgreSQL!');
+        return res.status(200).json({ received: true });
+      }
+
+      const ticket = await prisma.ticket.create({
+        data: {
+          acc_id: account.id,
+          subject: subject,
+          status: 'OPEN',
+          priority: 'MEDIUM',
+          sender_email: sender,
+          mails: {
+            create: [
+              {
+                subject: subject,
+                sender_email: sender,
+                recipient_email: recipient,
+                content: content,
+                email_type: 'incoming-complaint',
+                direction: 'INCOMING'
+              }
+            ]
+          }
+        }
+      });
+
+      console.log(`✅ [Complaint Logged]: Ticket #${ticket.tick_id} created for "${subject}"`);
+    } catch (err) {
+      console.error('❌ PRISMA DB ERROR:', err);
+    }
+  }
+
+  return res.status(200).json({ received: true });
 });
 
 module.exports = router;
